@@ -3,7 +3,7 @@
 // @namespace    http://tampermonkey.net/
 // @version      2.4.texomans-v1
 // @description  Add h:m duration presets to both the Labor Log modal and the Comment form
-// @author       Nick F  // Credit: https://github.com/esperto/Syncro-TamperMonkey
+// @author       Nick F - https://github.com/esperto/Syncro-TamperMonkey
 // @match        https://texomans.shield.syncromsp.com/tickets/*
 // @grant        none
 // ==/UserScript==
