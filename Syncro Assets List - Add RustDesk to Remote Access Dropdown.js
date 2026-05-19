@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Syncro Assets List - Add RustDesk to Remote Access Dropdown
-// @namespace    https://texomans.com/
+// @namespace    https://www.texomans.com/
 // @version      1.0.0
 // @description  Adds RustDesk to each asset row's Remote Access dropdown on the Syncro assets list page.
 // @match        https://*.syncromsp.com/customer_assets*
