@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Syncro – Duration Helper - Final
-// @namespace    http://tampermonkey.net/
+// @namespace    https://www.texomans.com/
 // @version      2.4.texomans-v1
 // @description  Add h:m duration presets to both the Labor Log modal and the Comment form
 // @author       Nick F - https://github.com/esperto/Syncro-TamperMonkey
