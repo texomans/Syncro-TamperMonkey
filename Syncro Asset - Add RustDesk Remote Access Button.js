@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Syncro - Add RustDesk Remote Access Button
+// @name         Syncro Asset - Add RustDesk Remote Access Button
 // @namespace    https://www.texomans.com/
 // @version      1.0.0
 // @description  Adds RustDesk to the Remote Access dropdown on Syncro asset pages when the RustDesk Link custom field is populated.
