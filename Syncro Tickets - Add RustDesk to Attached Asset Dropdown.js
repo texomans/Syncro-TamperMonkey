@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Syncro Tickets - Add RustDesk to Ticket Attached Asset Dropdown
+// @name         Syncro Tickets - Add RustDesk to Attached Asset Dropdown
 // @namespace    https://www.texomans.com/
 // @version      1.0.0
 // @description  Adds RustDesk to attached asset remote-access dropdowns on Syncro ticket pages.
