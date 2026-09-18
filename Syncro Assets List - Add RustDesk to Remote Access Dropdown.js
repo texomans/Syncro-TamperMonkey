@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Syncro Assets List - Add RustDesk to Remote Access Dropdown
 // @namespace    https://texomans.com/
-// @version      1.0.3
+// @version      1.0.4
 // @description  Adds RustDesk to each asset row's Remote Access dropdown on the Syncro assets list page and automatically closes the temporary RustDesk launch tab.
 // @match        https://*.syncromsp.com/customer_assets*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20List%20-%20Add%20RustDesk%20to%20Remote%20Access%20Dropdown.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20List%20-%20Add%20RustDesk%20to%20Remote%20Access%20Dropdown.js
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_openInTab
 // ==/UserScript==
 
 (function () {
@@ -27,6 +27,7 @@
 
   function normalizeUrl(value, base = window.location.origin) {
     const trimmed = (value || '').trim();
+
     if (!trimmed) return '';
 
     try {
@@ -37,49 +38,26 @@
   }
 
   function openRustDeskLaunchPage(rustDeskUrl) {
-    const launchTab = window.open('about:blank', '_blank');
+    let launchTab;
 
-    if (!launchTab) {
+    try {
+      launchTab = GM_openInTab(rustDeskUrl, {
+        active: true,
+        insert: true,
+        setParent: true
+      });
+    } catch (error) {
       console.warn(
-        '[RustDesk Assets List] Browser blocked the RustDesk launch tab.'
+        '[RustDesk Assets List] Could not open RustDesk launch tab:',
+        error
       );
 
-      window.open(rustDeskUrl, '_blank', 'noopener,noreferrer');
       return;
-    }
-
-    try {
-      launchTab.opener = null;
-    } catch {
-      // Ignore.
-    }
-
-    try {
-      launchTab.location.replace(rustDeskUrl);
-    } catch {
-      try {
-        launchTab.location.href = rustDeskUrl;
-      } catch (error) {
-        console.warn(
-          '[RustDesk Assets List] Could not navigate RustDesk launch tab:',
-          error
-        );
-
-        try {
-          launchTab.close();
-        } catch {
-          // Ignore.
-        }
-
-        return;
-      }
     }
 
     window.setTimeout(() => {
       try {
-        if (!launchTab.closed) {
-          launchTab.close();
-        }
+        launchTab?.close();
       } catch (error) {
         console.warn(
           '[RustDesk Assets List] Could not automatically close launch tab:',
@@ -98,6 +76,7 @@
 
     for (const value of Object.values(object)) {
       const found = findValueByKey(value, targetKey);
+
       if (found) return found;
     }
 
