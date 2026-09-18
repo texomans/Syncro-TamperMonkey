@@ -4,8 +4,8 @@
 // @version      1.2.2
 // @description  ChatGPT ticket helper with @Syncro live data, page fallback, clean new-chat workflow, and Public/Private Note preparation.
 // @match        https://*.syncromsp.com/tickets/*
-// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20ChatGPT%20Ticket%20Helper.ps
-// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20ChatGPT%20Ticket%20Helper.ps
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20ChatGPT%20Ticket%20Helper.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20ChatGPT%20Ticket%20Helper.js
 // @run-at       document-idle
 // @grant        GM_setClipboard
 // @grant        GM_openInTab
