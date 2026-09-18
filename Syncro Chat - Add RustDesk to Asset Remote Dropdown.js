@@ -5,6 +5,8 @@
 // @description  Adds RustDesk to the asset Remote Access dropdown on Syncro chat pages.
 // @match        https://*.syncromsp.com/chat
 // @match        https://*.syncromsp.com/chat/*
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Chat%20-%20Add%20RustDesk%20to%20Asset%20Remote%20Dropdown.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Chat%20-%20Add%20RustDesk%20to%20Asset%20Remote%20Dropdown.js
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
