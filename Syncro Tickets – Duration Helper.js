@@ -5,8 +5,8 @@
 // @description  Add h:m duration presets to both the Labor Log modal and the Comment form
 // @author       Nick F - https://github.com/esperto/Syncro-TamperMonkey
 // @match        https://*.syncromsp.com/tickets/*
-// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20–%20Duration%20Helper.js
-// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20–%20Duration%20Helper.js
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20–%20Duration%20Helper.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20–%20Duration%20Helper.js
 // @grant        none
 // ==/UserScript==
 
