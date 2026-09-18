@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Registry Editor Scroll Fix
-// @namespace    https://syncromsp.com/
-// @version      1.2.0
+// @namespace    https://texomans.com/
+// @version      1.2.1
 // @description  Fixes broken independent scrolling in Syncro Live Registry Editor panes.
 // @match        https://*.syncromsp.com/registry-editor*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Registry%20Editor%20Scroll%20Fix.js
