@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Chat - Add RustDesk to Asset Remote Dropdown
-// @namespace    https://texomans.com/
-// @version      1.0.0
+// @namespace    https://syncromsp.com/
+// @version      1.0.1
 // @description  Adds RustDesk to the asset Remote Access dropdown on Syncro chat pages.
 // @match        https://*.syncromsp.com/chat
 // @match        https://*.syncromsp.com/chat/*
