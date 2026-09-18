@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Syncro Tickets - Add RustDesk to Attached Asset Dropdown
 // @namespace    https://texomans.com/
-// @version      1.0.3
+// @version      1.0.4
 // @description  Adds RustDesk to attached asset remote-access dropdowns on Syncro ticket pages and automatically closes the temporary RustDesk launch tab.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Add%20RustDesk%20to%20Attached%20Asset%20Dropdown.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Add%20RustDesk%20to%20Attached%20Asset%20Dropdown.js
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_openInTab
 // ==/UserScript==
 
 (function () {
@@ -39,58 +39,26 @@
   }
 
   function openRustDeskLaunchPage(rustDeskUrl) {
-    const launchTab =
-      window.open('about:blank', '_blank');
+    let launchTab;
 
-    if (!launchTab) {
+    try {
+      launchTab = GM_openInTab(rustDeskUrl, {
+        active: true,
+        insert: true,
+        setParent: true
+      });
+    } catch (error) {
       console.warn(
-        '[RustDesk Ticket Button] Browser blocked the RustDesk launch tab.'
-      );
-
-      window.open(
-        rustDeskUrl,
-        '_blank',
-        'noopener,noreferrer'
+        '[RustDesk Ticket Button] Could not open RustDesk launch tab:',
+        error
       );
 
       return;
     }
 
-    try {
-      launchTab.opener = null;
-    } catch {
-      // Ignore.
-    }
-
-    try {
-      launchTab.location.replace(
-        rustDeskUrl
-      );
-    } catch {
-      try {
-        launchTab.location.href =
-          rustDeskUrl;
-      } catch (error) {
-        console.warn(
-          '[RustDesk Ticket Button] Could not navigate RustDesk launch tab:',
-          error
-        );
-
-        try {
-          launchTab.close();
-        } catch {
-          // Ignore.
-        }
-
-        return;
-      }
-    }
-
     window.setTimeout(() => {
       try {
-        if (!launchTab.closed) {
-          launchTab.close();
-        }
+        launchTab?.close();
       } catch (error) {
         console.warn(
           '[RustDesk Ticket Button] Could not automatically close launch tab:',
