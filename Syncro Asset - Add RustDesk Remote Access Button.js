@@ -3,7 +3,7 @@
 // @namespace    https://www.texomans.com/
 // @version      1.1.0
 // @description  Adds RustDesk to Syncro asset pages. Uses a Remote Access dropdown when Syncro Remote Access exists, or a direct RustDesk button when it does not.
-// @match        https://texomans.shield.syncromsp.com/customer_assets/*
+// @match        https://*.shield.syncromsp.com/customer_assets/*
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
