@@ -4,6 +4,8 @@
 // @version      1.0.0
 // @description  Adds RustDesk to each asset row's Remote Access dropdown on the Syncro assets list page.
 // @match        https://*.syncromsp.com/customer_assets*
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20List%20-%20Add%20RustDesk%20to%20Remote%20Access%20Dropdown.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20List%20-%20Add%20RustDesk%20to%20Remote%20Access%20Dropdown.js
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
