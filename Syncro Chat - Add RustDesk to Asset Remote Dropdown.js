@@ -1,22 +1,20 @@
 // ==UserScript==
 // @name         Syncro Chat - Add RustDesk to Asset Remote Dropdown
 // @namespace    https://texomans.com/
-// @version      1.0.3
+// @version      1.0.4
 // @description  Adds RustDesk to the asset Remote Access dropdown on Syncro chat pages and automatically closes the temporary launch tab.
 // @match        https://*.syncromsp.com/chat
 // @match        https://*.syncromsp.com/chat/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Chat%20-%20Add%20RustDesk%20to%20Asset%20Remote%20Dropdown.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Chat%20-%20Add%20RustDesk%20to%20Asset%20Remote%20Dropdown.js
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_openInTab
 // ==/UserScript==
 
 (function () {
   'use strict';
 
   const RUSTDESK_ITEM_ATTR = 'data-tns-rustdesk-chat-menu-item';
-
-  // Time to leave the temporary RustDesk launch page open before closing it.
   const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 4000;
 
   const rustDeskLinkCache = new Map();
@@ -73,7 +71,9 @@
       if (textUrl) return textUrl;
     }
 
-    const propNodes = assetDoc.querySelectorAll('[data-react-props], [data-props]');
+    const propNodes = assetDoc.querySelectorAll(
+      '[data-react-props], [data-props]'
+    );
 
     for (const node of propNodes) {
       const raw =
@@ -86,6 +86,7 @@
       try {
         const props = JSON.parse(raw);
         const found = normalizeUrl(findValueByKey(props, 'RustDesk Link'));
+
         if (found) return found;
       } catch {
         // Ignore invalid JSON blocks.
@@ -133,65 +134,26 @@
   }
 
   function openRustDeskLaunchPage(rustDeskUrl) {
-    /*
-     * Open the tab directly from the user's click event so Chromium/Vivaldi
-     * treats it as a user-initiated action instead of blocking it as a popup.
-     */
-    const launchTab = window.open('about:blank', '_blank');
+    let launchTab;
 
-    if (!launchTab) {
+    try {
+      launchTab = GM_openInTab(rustDeskUrl, {
+        active: true,
+        insert: true,
+        setParent: true
+      });
+    } catch (error) {
       console.warn(
-        '[RustDesk Chat Button] Browser blocked the RustDesk launch tab.'
+        '[RustDesk Chat Button] Could not open RustDesk launch tab:',
+        error
       );
 
-      // Fall back to opening the URL normally.
-      window.open(rustDeskUrl, '_blank', 'noopener,noreferrer');
       return;
     }
 
-    /*
-     * Prevent the launch page from interacting with the Syncro tab.
-     * We still retain our WindowProxy reference so we can close it later.
-     */
-    try {
-      launchTab.opener = null;
-    } catch {
-      // Ignore.
-    }
-
-    /*
-     * Navigate the temporary tab to the RustDesk launch page.
-     */
-    try {
-      launchTab.location.replace(rustDeskUrl);
-    } catch {
-      try {
-        launchTab.location.href = rustDeskUrl;
-      } catch (error) {
-        console.warn(
-          '[RustDesk Chat Button] Could not navigate RustDesk launch tab:',
-          error
-        );
-
-        try {
-          launchTab.close();
-        } catch {
-          // Ignore.
-        }
-
-        return;
-      }
-    }
-
-    /*
-     * Give the RustDesk launch page enough time to hand the connection
-     * off to the RustDesk client, then close the temporary browser tab.
-     */
     window.setTimeout(() => {
       try {
-        if (!launchTab.closed) {
-          launchTab.close();
-        }
+        launchTab?.close();
       } catch (error) {
         console.warn(
           '[RustDesk Chat Button] Could not automatically close launch tab:',
@@ -231,10 +193,12 @@
       assetPanel.querySelector('a[href*="/remote_access"]') ||
       Array.from(assetPanel.querySelectorAll('a, button')).find((element) => {
         const text = element.textContent || '';
+
         const title =
           element.getAttribute('title') ||
           element.getAttribute('data-original-title') ||
           '';
+
         const aria = element.getAttribute('aria-label') || '';
 
         return /remote access/i.test(`${text} ${title} ${aria}`);
@@ -267,12 +231,14 @@
 
     if (dropdownToggle) {
       const toggleGroup =
-        dropdownToggle.closest('.btn-group') || dropdownToggle.parentElement;
+        dropdownToggle.closest('.btn-group') ||
+        dropdownToggle.parentElement;
 
       menu = document.createElement('ul');
       menu.className = 'dropdown-menu dropdown-menu-right';
 
       toggleGroup.appendChild(menu);
+
       return menu;
     }
 
@@ -317,10 +283,6 @@
 
     const rustDeskAnchor = document.createElement('a');
 
-    /*
-     * Keep the real URL in href so the menu item still behaves like
-     * a legitimate link and exposes the destination on hover.
-     */
     rustDeskAnchor.href = rustDeskUrl;
     rustDeskAnchor.textContent = 'RustDesk';
 
