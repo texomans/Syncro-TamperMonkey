@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Chat - Add RustDesk to Asset Remote Dropdown
 // @namespace    https://texomans.com/
-// @version      1.0.2
-// @description  Adds RustDesk to the asset Remote Access dropdown on Syncro chat pages.
+// @version      1.0.3
+// @description  Adds RustDesk to the asset Remote Access dropdown on Syncro chat pages and automatically closes the temporary launch tab.
 // @match        https://*.syncromsp.com/chat
 // @match        https://*.syncromsp.com/chat/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Chat%20-%20Add%20RustDesk%20to%20Asset%20Remote%20Dropdown.js
@@ -15,6 +15,10 @@
   'use strict';
 
   const RUSTDESK_ITEM_ATTR = 'data-tns-rustdesk-chat-menu-item';
+
+  // Time to leave the temporary RustDesk launch page open before closing it.
+  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 4000;
+
   const rustDeskLinkCache = new Map();
 
   function normalizeUrl(value, base = window.location.origin) {
@@ -114,7 +118,12 @@
         return getRustDeskLinkFromAssetDocument(assetDoc);
       })
       .catch((error) => {
-        console.warn('[RustDesk Chat Button] Could not fetch asset page:', normalizedAssetUrl, error);
+        console.warn(
+          '[RustDesk Chat Button] Could not fetch asset page:',
+          normalizedAssetUrl,
+          error
+        );
+
         return '';
       });
 
@@ -123,11 +132,83 @@
     return await promise;
   }
 
+  function openRustDeskLaunchPage(rustDeskUrl) {
+    /*
+     * Open the tab directly from the user's click event so Chromium/Vivaldi
+     * treats it as a user-initiated action instead of blocking it as a popup.
+     */
+    const launchTab = window.open('about:blank', '_blank');
+
+    if (!launchTab) {
+      console.warn(
+        '[RustDesk Chat Button] Browser blocked the RustDesk launch tab.'
+      );
+
+      // Fall back to opening the URL normally.
+      window.open(rustDeskUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    /*
+     * Prevent the launch page from interacting with the Syncro tab.
+     * We still retain our WindowProxy reference so we can close it later.
+     */
+    try {
+      launchTab.opener = null;
+    } catch {
+      // Ignore.
+    }
+
+    /*
+     * Navigate the temporary tab to the RustDesk launch page.
+     */
+    try {
+      launchTab.location.replace(rustDeskUrl);
+    } catch {
+      try {
+        launchTab.location.href = rustDeskUrl;
+      } catch (error) {
+        console.warn(
+          '[RustDesk Chat Button] Could not navigate RustDesk launch tab:',
+          error
+        );
+
+        try {
+          launchTab.close();
+        } catch {
+          // Ignore.
+        }
+
+        return;
+      }
+    }
+
+    /*
+     * Give the RustDesk launch page enough time to hand the connection
+     * off to the RustDesk client, then close the temporary browser tab.
+     */
+    window.setTimeout(() => {
+      try {
+        if (!launchTab.closed) {
+          launchTab.close();
+        }
+      } catch (error) {
+        console.warn(
+          '[RustDesk Chat Button] Could not automatically close launch tab:',
+          error
+        );
+      }
+    }, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
+  }
+
   function findAssetPanel(assetLink, assetId) {
     let node = assetLink.parentElement;
 
     while (node && node !== document.body) {
-      const hasThisAssetLink = !!node.querySelector(`a[href="/customer_assets/${assetId}"], a[href$="/customer_assets/${assetId}"]`);
+      const hasThisAssetLink = !!node.querySelector(
+        `a[href="/customer_assets/${assetId}"], a[href$="/customer_assets/${assetId}"]`
+      );
+
       const hasRemoteButton = !!node.querySelector(
         `a[href*="/customer_assets/${assetId}/remote_access"], a[href*="/remote_access"], button, .dropdown-toggle`
       );
@@ -144,11 +225,16 @@
 
   function findRemoteAccessArea(assetPanel, assetId) {
     const remoteButton =
-      assetPanel.querySelector(`a[href*="/customer_assets/${assetId}/remote_access"]`) ||
+      assetPanel.querySelector(
+        `a[href*="/customer_assets/${assetId}/remote_access"]`
+      ) ||
       assetPanel.querySelector('a[href*="/remote_access"]') ||
       Array.from(assetPanel.querySelectorAll('a, button')).find((element) => {
         const text = element.textContent || '';
-        const title = element.getAttribute('title') || element.getAttribute('data-original-title') || '';
+        const title =
+          element.getAttribute('title') ||
+          element.getAttribute('data-original-title') ||
+          '';
         const aria = element.getAttribute('aria-label') || '';
 
         return /remote access/i.test(`${text} ${title} ${aria}`);
@@ -172,11 +258,16 @@
       Array.from(remoteArea.querySelectorAll('a, button')).find((element) => {
         const text = element.textContent || '';
         const aria = element.getAttribute('aria-label') || '';
-        return /caret|dropdown|more/i.test(`${text} ${aria}`) || element.querySelector('.caret');
+
+        return (
+          /caret|dropdown|more/i.test(`${text} ${aria}`) ||
+          element.querySelector('.caret')
+        );
       });
 
     if (dropdownToggle) {
-      const toggleGroup = dropdownToggle.closest('.btn-group') || dropdownToggle.parentElement;
+      const toggleGroup =
+        dropdownToggle.closest('.btn-group') || dropdownToggle.parentElement;
 
       menu = document.createElement('ul');
       menu.className = 'dropdown-menu dropdown-menu-right';
@@ -193,6 +284,7 @@
 
     const dropdownGroup = document.createElement('div');
     dropdownGroup.className = 'btn-group';
+
     dropdownGroup.innerHTML = `
       <a class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" href="#">
         &nbsp;<span class="caret"></span>
@@ -219,14 +311,24 @@
 
   function insertRustDeskMenuItem(menu, assetId, rustDeskUrl) {
     const rustDeskItem = document.createElement('li');
+
     rustDeskItem.setAttribute(RUSTDESK_ITEM_ATTR, 'true');
     rustDeskItem.setAttribute('data-asset-id', assetId);
 
     const rustDeskAnchor = document.createElement('a');
+
+    /*
+     * Keep the real URL in href so the menu item still behaves like
+     * a legitimate link and exposes the destination on hover.
+     */
     rustDeskAnchor.href = rustDeskUrl;
-    rustDeskAnchor.target = '_blank';
-    rustDeskAnchor.rel = 'noopener noreferrer';
     rustDeskAnchor.textContent = 'RustDesk';
+
+    rustDeskAnchor.addEventListener('click', (event) => {
+      event.preventDefault();
+
+      openRustDeskLaunchPage(rustDeskUrl);
+    });
 
     rustDeskItem.appendChild(rustDeskAnchor);
 
@@ -257,7 +359,11 @@
     const menu = getOrCreateDropdownMenu(remoteArea);
     if (!menu) return;
 
-    if (menu.querySelector(`li[${RUSTDESK_ITEM_ATTR}][data-asset-id="${assetId}"]`)) {
+    if (
+      menu.querySelector(
+        `li[${RUSTDESK_ITEM_ATTR}][data-asset-id="${assetId}"]`
+      )
+    ) {
       return;
     }
 
@@ -265,14 +371,16 @@
   }
 
   function getVisibleAssetLinks() {
-    const links = Array.from(document.querySelectorAll('a[href*="/customer_assets/"]'))
-      .filter(isAssetViewLink);
+    const links = Array.from(
+      document.querySelectorAll('a[href*="/customer_assets/"]')
+    ).filter(isAssetViewLink);
 
     const unique = new Map();
 
     links.forEach((link) => {
       const assetId = getAssetIdFromUrl(link.href);
       if (!assetId) return;
+
       unique.set(assetId, link);
     });
 
@@ -303,9 +411,16 @@
   }
 
   scheduleProcessChatAssetPanels();
-  window.addEventListener('load', scheduleProcessChatAssetPanels);
 
-  const observer = new MutationObserver(scheduleProcessChatAssetPanels);
+  window.addEventListener(
+    'load',
+    scheduleProcessChatAssetPanels
+  );
+
+  const observer = new MutationObserver(
+    scheduleProcessChatAssetPanels
+  );
+
   observer.observe(document.body, {
     childList: true,
     subtree: true
