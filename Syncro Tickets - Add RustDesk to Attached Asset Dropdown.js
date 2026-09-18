@@ -4,6 +4,8 @@
 // @version      1.0.0
 // @description  Adds RustDesk to attached asset remote-access dropdowns on Syncro ticket pages.
 // @match        https://*.syncromsp.com/tickets/*
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Add%20RustDesk%20to%20Attached%20Asset%20Dropdown.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Add%20RustDesk%20to%20Attached%20Asset%20Dropdown.js
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
