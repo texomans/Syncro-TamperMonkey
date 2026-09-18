@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro RMM Alerts - Hide Ticketed Alerts
 // @namespace    https://texomans.com/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Hides RMM alerts that already have a ticket and adds a Show Ticketed Alerts toggle.
 // @match        https://*.syncromsp.com/rmm_alerts*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20RMM%20Alerts%20-%20Hide%20Ticketed%20Alerts.js
