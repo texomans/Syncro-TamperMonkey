@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Asset - Add RustDesk Remote Access Button
 // @namespace    https://texomans.com/
-// @version      1.1.3
-// @description  Adds RustDesk to Syncro asset pages. Uses a Remote Access dropdown when Syncro Remote Access exists, or a direct RustDesk button when it does not.
+// @version      1.1.4
+// @description  Adds RustDesk to Syncro asset pages. Uses a Remote Access dropdown when Syncro Remote Access exists, or a direct RustDesk button when it does not. Automatically closes the temporary RustDesk launch tab.
 // @match        https://*.syncromsp.com/customer_assets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Asset%20-%20Add%20RustDesk%20Remote%20Access%20Button.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Asset%20-%20Add%20RustDesk%20Remote%20Access%20Button.js
@@ -17,6 +17,8 @@
   const RUSTDESK_DROPDOWN_ATTR = 'data-tns-rustdesk-remote-dropdown';
   const RUSTDESK_DIRECT_ATTR = 'data-tns-rustdesk-direct-button';
   const RUSTDESK_DIRECT_GROUP_ATTR = 'data-tns-rustdesk-direct-group';
+
+  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 4000;
 
   function normalizeUrl(value) {
     const trimmed = (value || '').trim();
@@ -34,6 +36,59 @@
     } catch {
       return '';
     }
+  }
+
+  function openRustDeskLaunchPage(rustDeskUrl) {
+    const launchTab = window.open('about:blank', '_blank');
+
+    if (!launchTab) {
+      console.warn(
+        '[RustDesk Asset Button] Browser blocked the RustDesk launch tab.'
+      );
+
+      window.open(rustDeskUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    try {
+      launchTab.opener = null;
+    } catch {
+      // Ignore.
+    }
+
+    try {
+      launchTab.location.replace(rustDeskUrl);
+    } catch {
+      try {
+        launchTab.location.href = rustDeskUrl;
+      } catch (error) {
+        console.warn(
+          '[RustDesk Asset Button] Could not navigate RustDesk launch tab:',
+          error
+        );
+
+        try {
+          launchTab.close();
+        } catch {
+          // Ignore.
+        }
+
+        return;
+      }
+    }
+
+    window.setTimeout(() => {
+      try {
+        if (!launchTab.closed) {
+          launchTab.close();
+        }
+      } catch (error) {
+        console.warn(
+          '[RustDesk Asset Button] Could not automatically close launch tab:',
+          error
+        );
+      }
+    }, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
   }
 
   function getRustDeskLinkFromCustomField() {
@@ -226,12 +281,6 @@
       `;
     }
 
-    /*
-     * Critical part:
-     *
-     * The RustDesk dropdown goes IMMEDIATELY AFTER Remote Access,
-     * not at the end of the surrounding btn-group.
-     */
     if (remoteButton.nextElementSibling !== dropdownGroup) {
       remoteButton.insertAdjacentElement('afterend', dropdownGroup);
     }
@@ -249,9 +298,17 @@
       item.setAttribute(RUSTDESK_ITEM_ATTR, 'true');
 
       const link = document.createElement('a');
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
       link.textContent = 'RustDesk';
+
+      link.addEventListener('click', (event) => {
+        event.preventDefault();
+
+        const url = link.href;
+
+        if (url) {
+          openRustDeskLaunchPage(url);
+        }
+      });
 
       item.appendChild(link);
     }
@@ -262,11 +319,6 @@
       link.href = rustDeskUrl;
     }
 
-    /*
-     * Preserve the old behavior:
-     * if a Remote Access menu contains ScreenConnect,
-     * put RustDesk immediately before it.
-     */
     const screenConnectItem = findScreenConnectItem(menu);
 
     if (screenConnectItem) {
@@ -281,30 +333,13 @@
   }
 
   function configureRemoteAccessDropdown(remoteButton, rustDeskUrl) {
-    /*
-     * When Syncro Remote Access exists:
-     *
-     *   Remote Access [▼]  Backgrounding Tools [▼]
-     *
-     * RustDesk belongs to the dropdown directly beside
-     * Remote Access.
-     */
-
     removeDirectRustDeskButton();
 
     let menu = getNativeRemoteAccessMenu(remoteButton);
 
     if (menu) {
-      /*
-       * Syncro already supplied a Remote Access dropdown,
-       * so use it and remove our custom dropdown if one exists.
-       */
       removeCustomRemoteDropdown();
     } else {
-      /*
-       * Syncro Remote Access is a standalone button.
-       * Create our own split-dropdown immediately after it.
-       */
       menu = getOrCreateRustDeskDropdown(remoteButton);
     }
 
@@ -315,20 +350,10 @@
       rustDeskUrl
     );
 
-    /*
-     * Also cleans up RustDesk if an older version of this script
-     * accidentally left it inside Backgrounding Tools.
-     */
     removeRustDeskMenuItemsExcept(rustDeskItem);
   }
 
   function configureDirectRustDeskButton(rustDeskUrl) {
-    /*
-     * When Syncro's own Remote Access is NOT present:
-     *
-     *   RustDesk  Backgrounding Tools [▼]
-     */
-
     removeCustomRemoteDropdown();
     removeRustDeskMenuItemsExcept();
 
@@ -347,20 +372,24 @@
       rustDeskButton = document.createElement('a');
       rustDeskButton.className = 'btn btn-default btn-sm';
       rustDeskButton.setAttribute(RUSTDESK_DIRECT_ATTR, 'true');
-      rustDeskButton.target = '_blank';
-      rustDeskButton.rel = 'noopener noreferrer';
 
       rustDeskButton.innerHTML =
         '<i class="fas fa-desktop"></i>&nbsp;RustDesk';
+
+      rustDeskButton.addEventListener('click', (event) => {
+        event.preventDefault();
+
+        const url = rustDeskButton.href;
+
+        if (url) {
+          openRustDeskLaunchPage(url);
+        }
+      });
     }
 
     rustDeskButton.href = rustDeskUrl;
 
     if (backgroundButton?.parentElement) {
-      /*
-       * Put the direct RustDesk button where Remote Access
-       * normally appears: immediately before Backgrounding Tools.
-       */
       if (
         rustDeskButton.parentElement !== backgroundButton.parentElement ||
         rustDeskButton.nextElementSibling !== backgroundButton
@@ -382,9 +411,6 @@
       return;
     }
 
-    /*
-     * Fallback in case Syncro someday removes Backgrounding Tools too.
-     */
     let group = document.querySelector(
       `[${RUSTDESK_DIRECT_GROUP_ATTR}]`
     );
@@ -435,21 +461,10 @@
     }, 250);
   }
 
-  /*
-   * Initial run.
-   */
   scheduleUpdate();
 
-  /*
-   * Syncro dynamically changes portions of the page,
-   * so retry after full load as well.
-   */
   window.addEventListener('load', scheduleUpdate);
 
-  /*
-   * Catch AJAX / React DOM changes without constantly
-   * rebuilding our controls.
-   */
   const observer = new MutationObserver(scheduleUpdate);
 
   observer.observe(document.body, {
