@@ -1,13 +1,13 @@
 // ==UserScript==
 // @name         Syncro Asset - Add RustDesk Remote Access Button
 // @namespace    https://texomans.com/
-// @version      1.1.4
+// @version      1.1.5
 // @description  Adds RustDesk to Syncro asset pages. Uses a Remote Access dropdown when Syncro Remote Access exists, or a direct RustDesk button when it does not. Automatically closes the temporary RustDesk launch tab.
 // @match        https://*.syncromsp.com/customer_assets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Asset%20-%20Add%20RustDesk%20Remote%20Access%20Button.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Asset%20-%20Add%20RustDesk%20Remote%20Access%20Button.js
 // @run-at       document-idle
-// @grant        none
+// @grant        GM_openInTab
 // ==/UserScript==
 
 (function () {
@@ -39,49 +39,26 @@
   }
 
   function openRustDeskLaunchPage(rustDeskUrl) {
-    const launchTab = window.open('about:blank', '_blank');
+    let launchTab;
 
-    if (!launchTab) {
+    try {
+      launchTab = GM_openInTab(rustDeskUrl, {
+        active: true,
+        insert: true,
+        setParent: true
+      });
+    } catch (error) {
       console.warn(
-        '[RustDesk Asset Button] Browser blocked the RustDesk launch tab.'
+        '[RustDesk Asset Button] Could not open RustDesk launch tab:',
+        error
       );
 
-      window.open(rustDeskUrl, '_blank', 'noopener,noreferrer');
       return;
-    }
-
-    try {
-      launchTab.opener = null;
-    } catch {
-      // Ignore.
-    }
-
-    try {
-      launchTab.location.replace(rustDeskUrl);
-    } catch {
-      try {
-        launchTab.location.href = rustDeskUrl;
-      } catch (error) {
-        console.warn(
-          '[RustDesk Asset Button] Could not navigate RustDesk launch tab:',
-          error
-        );
-
-        try {
-          launchTab.close();
-        } catch {
-          // Ignore.
-        }
-
-        return;
-      }
     }
 
     window.setTimeout(() => {
       try {
-        if (!launchTab.closed) {
-          launchTab.close();
-        }
+        launchTab?.close();
       } catch (error) {
         console.warn(
           '[RustDesk Asset Button] Could not automatically close launch tab:',
@@ -92,7 +69,10 @@
   }
 
   function getRustDeskLinkFromCustomField() {
-    const fieldCell = document.querySelector('td[data-testid="RustDesk Link"]');
+    const fieldCell = document.querySelector(
+      'td[data-testid="RustDesk Link"]'
+    );
+
     if (!fieldCell) return '';
 
     const anchor = fieldCell.querySelector('a[href]');
@@ -153,9 +133,11 @@
   function getBackgroundingToolsButton() {
     const buttons = document.querySelectorAll('.btn-bar a.btn');
 
-    return Array.from(buttons).find((button) =>
-      /backgrounding\s+tools/i.test(button.textContent || '')
-    ) || null;
+    return (
+      Array.from(buttons).find((button) =>
+        /backgrounding\s+tools/i.test(button.textContent || '')
+      ) || null
+    );
   }
 
   function getButtonBar() {
@@ -176,13 +158,6 @@
     return document.querySelector('.btn-bar');
   }
 
-  /*
-   * If Syncro itself ever puts a dropdown immediately after
-   * Remote Access, this detects that dropdown specifically.
-   *
-   * It deliberately does NOT search the entire outer btn-group,
-   * which is what caused RustDesk to end up under Backgrounding Tools.
-   */
   function getNativeRemoteAccessMenu(remoteButton) {
     const next = remoteButton.nextElementSibling;
 
@@ -212,9 +187,11 @@
   }
 
   function findScreenConnectItem(menu) {
-    return Array.from(menu.querySelectorAll(':scope > li')).find((li) =>
-      /screen\s*connect/i.test(li.textContent || '')
-    ) || null;
+    return (
+      Array.from(menu.querySelectorAll(':scope > li')).find((li) =>
+        /screen\s*connect/i.test(li.textContent || '')
+      ) || null
+    );
   }
 
   function removeRustDeskMenuItemsExcept(keepItem = null) {
@@ -285,7 +262,9 @@
       remoteButton.insertAdjacentElement('afterend', dropdownGroup);
     }
 
-    return dropdownGroup.querySelector(':scope > ul.dropdown-menu');
+    return dropdownGroup.querySelector(
+      ':scope > ul.dropdown-menu'
+    );
   }
 
   function getOrCreateRustDeskMenuItem(menu, rustDeskUrl) {
@@ -298,15 +277,14 @@
       item.setAttribute(RUSTDESK_ITEM_ATTR, 'true');
 
       const link = document.createElement('a');
+
       link.textContent = 'RustDesk';
 
       link.addEventListener('click', (event) => {
         event.preventDefault();
 
-        const url = link.href;
-
-        if (url) {
-          openRustDeskLaunchPage(url);
+        if (link.href) {
+          openRustDeskLaunchPage(link.href);
         }
       });
 
@@ -379,10 +357,8 @@
       rustDeskButton.addEventListener('click', (event) => {
         event.preventDefault();
 
-        const url = rustDeskButton.href;
-
-        if (url) {
-          openRustDeskLaunchPage(url);
+        if (rustDeskButton.href) {
+          openRustDeskLaunchPage(rustDeskButton.href);
         }
       });
     }
