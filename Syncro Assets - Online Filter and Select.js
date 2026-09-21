@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Assets - Online Filter and Select
 // @namespace    https://texomans.com/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Shows online asset counts and adds Online Only and Select Online controls to the Syncro Assets page.
 // @match        https://*.syncromsp.com/customer_assets*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Online%20Filter%20and%20Select.js
@@ -14,6 +14,7 @@
     'use strict';
 
     const TOOLBAR_ID = 'tns-online-assets-toolbar';
+    const STYLE_ID = 'tns-online-assets-style';
     const FILTER_HIDDEN_CLASS = 'tns-online-filter-hidden';
 
     let onlineOnlyEnabled = false;
@@ -27,9 +28,8 @@
     }
 
     function getAssetsTable() {
-        return (
-            document.querySelector('table[data-testid="assets-table"]') ||
-            document.querySelector('table')
+        return document.querySelector(
+            'table[data-testid="assets-table"]'
         );
     }
 
@@ -44,9 +44,11 @@
             table.querySelectorAll(
                 'tbody tr[data-testid^="asset-row-"], tbody tr'
             )
-        ).filter(row => {
-            return !!row.querySelector('input.selectedId, input[type="checkbox"][value]');
-        });
+        ).filter(row =>
+            !!row.querySelector(
+                'input.selectedId, input[type="checkbox"][value]'
+            )
+        );
     }
 
     function normalizeText(value) {
@@ -61,9 +63,11 @@
             return -1;
         }
 
-        const headers = Array.from(table.querySelectorAll('thead th'));
+        const headers = Array.from(
+            table.querySelectorAll('thead th')
+        );
 
-        const statusTerms = [
+        const terms = [
             'status',
             'online',
             'agent status',
@@ -72,10 +76,57 @@
         ];
 
         return headers.findIndex(header => {
-            const text = normalizeText(header.textContent);
+            const text = normalizeText(
+                header.textContent
+            );
 
-            return statusTerms.some(term => text === term || text.includes(term));
+            return terms.some(term =>
+                text === term ||
+                text.includes(term)
+            );
         });
+    }
+
+    function elementIndicatesOffline(element) {
+        if (!element) {
+            return false;
+        }
+
+        const attributes = [
+            element.getAttribute('title'),
+            element.getAttribute('aria-label'),
+            element.getAttribute('data-original-title'),
+            element.getAttribute('data-status'),
+            element.getAttribute('data-state'),
+            element.getAttribute('data-online')
+        ]
+            .filter(Boolean)
+            .map(normalizeText);
+
+        if (
+            attributes.some(value =>
+                value === 'offline' ||
+                value === 'false' ||
+                value.includes('currently offline') ||
+                value.includes('agent offline') ||
+                value.includes('device offline')
+            )
+        ) {
+            return true;
+        }
+
+        const classText = normalizeText(
+            typeof element.className === 'string'
+                ? element.className
+                : ''
+        );
+
+        return (
+            /\bstatus-offline\b/.test(classText) ||
+            /\basset-offline\b/.test(classText) ||
+            /\bis-offline\b/.test(classText) ||
+            /\boffline\b/.test(classText)
+        );
     }
 
     function elementIndicatesOnline(element) {
@@ -121,11 +172,6 @@
             return true;
         }
 
-        /*
-         * Syncro commonly uses Bootstrap-style success indicators for
-         * connected/healthy states. Limit this to circle/status-style
-         * elements to avoid treating unrelated green text as online.
-         */
         if (
             classText.includes('text-success') &&
             (
@@ -133,52 +179,6 @@
                 classText.includes('status') ||
                 element.tagName === 'I'
             )
-        ) {
-            return true;
-        }
-
-        return false;
-    }
-
-    function elementIndicatesOffline(element) {
-        if (!element) {
-            return false;
-        }
-
-        const attributes = [
-            element.getAttribute('title'),
-            element.getAttribute('aria-label'),
-            element.getAttribute('data-original-title'),
-            element.getAttribute('data-status'),
-            element.getAttribute('data-state'),
-            element.getAttribute('data-online')
-        ]
-            .filter(Boolean)
-            .map(normalizeText);
-
-        if (
-            attributes.some(value =>
-                value === 'offline' ||
-                value === 'false' ||
-                value.includes('currently offline') ||
-                value.includes('agent offline') ||
-                value.includes('device offline')
-            )
-        ) {
-            return true;
-        }
-
-        const classText = normalizeText(
-            typeof element.className === 'string'
-                ? element.className
-                : ''
-        );
-
-        if (
-            /\bstatus-offline\b/.test(classText) ||
-            /\basset-offline\b/.test(classText) ||
-            /\bis-offline\b/.test(classText) ||
-            /\boffline\b/.test(classText)
         ) {
             return true;
         }
@@ -213,9 +213,8 @@
         ];
 
         /*
-         * Offline wins over online. This prevents strings such as
-         * "Last Online" from causing an offline machine to be counted
-         * as online.
+         * Check offline first so labels such as "Last Online"
+         * don't accidentally make an offline asset look online.
          */
         for (const element of elements) {
             if (elementIndicatesOffline(element)) {
@@ -233,117 +232,119 @@
     }
 
     function isAssetOnline(row) {
-        /*
-         * First inspect explicit row-level attributes/classes.
-         */
-        const rowStatus = inspectElementForStatus(row);
-
-        if (rowStatus !== null) {
-            return rowStatus;
-        }
-
-        const table = getAssetsTable();
-        const statusColumnIndex = getStatusColumnIndex(table);
+        const statusColumnIndex =
+            getStatusColumnIndex(
+                getAssetsTable()
+            );
 
         /*
-         * If Syncro gives us a Status-type column, prioritize it.
+         * Prefer the actual Status column when Syncro exposes one.
          */
         if (statusColumnIndex >= 0) {
-            const cells = row.querySelectorAll('td');
-            const statusCell = cells[statusColumnIndex];
+            const cells =
+                row.querySelectorAll('td');
+
+            const statusCell =
+                cells[statusColumnIndex];
 
             if (statusCell) {
-                const status = inspectElementForStatus(statusCell);
+                const result =
+                    inspectElementForStatus(
+                        statusCell
+                    );
 
-                if (status !== null) {
-                    return status;
+                if (result !== null) {
+                    return result;
                 }
 
-                const text = normalizeText(statusCell.textContent);
+                const text = normalizeText(
+                    statusCell.textContent
+                );
 
-                if (/^online$/.test(text)) {
-                    return true;
-                }
-
-                if (/^offline$/.test(text)) {
+                if (text === 'offline') {
                     return false;
+                }
+
+                if (text === 'online') {
+                    return true;
                 }
             }
         }
 
         /*
-         * Final conservative fallback:
-         * look for small elements whose entire visible text is "Online".
-         *
-         * We deliberately do NOT search row.textContent for the word
-         * "online", because fields such as "Last Online" could otherwise
-         * generate false positives.
+         * Then inspect the row for explicit online/offline
+         * attributes or status icons.
          */
-        const possibleLabels = row.querySelectorAll(
-            'span, small, strong, div, i'
-        );
+        const rowResult =
+            inspectElementForStatus(row);
+
+        if (rowResult !== null) {
+            return rowResult;
+        }
+
+        /*
+         * Conservative text fallback.
+         */
+        const possibleLabels =
+            row.querySelectorAll(
+                'span, small, strong, div, i'
+            );
 
         for (const element of possibleLabels) {
-            const text = normalizeText(element.textContent);
-
-            if (text === 'offline') {
+            if (
+                normalizeText(
+                    element.textContent
+                ) === 'offline'
+            ) {
                 return false;
             }
         }
 
         for (const element of possibleLabels) {
-            const text = normalizeText(element.textContent);
-
-            if (text === 'online') {
+            if (
+                normalizeText(
+                    element.textContent
+                ) === 'online'
+            ) {
                 return true;
             }
         }
 
         /*
-         * Unknown status is treated as NOT online.
-         *
-         * This is intentionally conservative because the main use case is
-         * selecting machines before a bulk script deployment.
+         * Unknown = offline for selection purposes.
          */
         return false;
     }
 
     function getAssetCheckbox(row) {
         return (
-            row.querySelector('input.selectedId[type="checkbox"]') ||
-            row.querySelector('input.selectedId') ||
-            row.querySelector('input[type="checkbox"][value]')
+            row.querySelector(
+                'input.selectedId[type="checkbox"]'
+            ) ||
+            row.querySelector(
+                'input.selectedId'
+            ) ||
+            row.querySelector(
+                'input[type="checkbox"][value]'
+            )
         );
     }
 
-    function isRowVisibleBySyncro(row) {
-        if (!row) {
-            return false;
-        }
-
-        /*
-         * Online rows are never hidden by our own filter, so a normal
-         * visibility check tells us whether Syncro itself currently has
-         * this row visible because of search/filter/pagination.
-         */
-        return (
-            row.getClientRects().length > 0 &&
-            window.getComputedStyle(row).display !== 'none'
-        );
-    }
-
-    function setCheckboxState(checkbox, shouldBeChecked) {
-        if (!checkbox || checkbox.disabled) {
-            return;
-        }
-
-        if (checkbox.checked === shouldBeChecked) {
+    function setCheckboxState(
+        checkbox,
+        checked
+    ) {
+        if (
+            !checkbox ||
+            checkbox.disabled ||
+            checkbox.checked === checked
+        ) {
             return;
         }
 
         /*
-         * Use click() rather than changing .checked directly so Syncro's
-         * own checkbox event handlers and bulk-action controls update.
+         * Click the real checkbox so Syncro's own bulk-selection
+         * JavaScript knows the state changed.
          */
         checkbox.click();
     }
@@ -352,65 +353,90 @@
         const rows = getAssetRows();
 
         rows.forEach(row => {
-            if (!isRowVisibleBySyncro(row)) {
+            /*
+             * Ignore assets hidden by Syncro itself.
+             *
+             * When Online Only is enabled, online assets remain visible,
+             * so they still qualify here.
+             */
+            if (
+                !row.classList.contains(
+                    FILTER_HIDDEN_CLASS
+                ) &&
+                (
+                    row.getClientRects().length === 0 ||
+                    window.getComputedStyle(row).display === 'none'
+                )
+            ) {
                 return;
             }
 
-            const checkbox = getAssetCheckbox(row);
+            const checkbox =
+                getAssetCheckbox(row);
 
             if (!checkbox) {
                 return;
             }
 
-            const online = isAssetOnline(row);
-
-            /*
-             * This intentionally deselects visible offline assets.
-             * It helps prevent accidentally including an offline device
-             * in a bulk script deployment.
-             */
-            setCheckboxState(checkbox, online);
+            setCheckboxState(
+                checkbox,
+                isAssetOnline(row)
+            );
         });
-
-        scheduleUpdate();
     }
 
     function applyOnlineFilter() {
-        const rows = getAssetRows();
+        getAssetRows().forEach(row => {
+            const online =
+                isAssetOnline(row);
 
-        rows.forEach(row => {
-            const online = isAssetOnline(row);
+            row.dataset.tnsOnline =
+                online ? 'true' : 'false';
 
-            row.dataset.tnsOnline = online ? 'true' : 'false';
-
-            if (onlineOnlyEnabled && !online) {
-                row.classList.add(FILTER_HIDDEN_CLASS);
-            } else {
-                row.classList.remove(FILTER_HIDDEN_CLASS);
-            }
+            row.classList.toggle(
+                FILTER_HIDDEN_CLASS,
+                onlineOnlyEnabled && !online
+            );
         });
     }
 
     function updateCounter() {
-        const counter = document.querySelector(
-            `#${TOOLBAR_ID} [data-tns-online-count]`
-        );
+        const counter =
+            document.querySelector(
+                `#${TOOLBAR_ID} [data-tns-online-count]`
+            );
 
         if (!counter) {
             return;
         }
 
         const rows = getAssetRows();
-        const total = rows.length;
-        const online = rows.filter(isAssetOnline).length;
 
-        counter.textContent = `🟢 ${online} Online / ${total} Total`;
+        const total = rows.length;
+
+        const online =
+            rows.filter(
+                isAssetOnline
+            ).length;
+
+        const newText =
+            `🟢 ${online} Online / ${total} Total`;
+
+        /*
+         * Important:
+         * Don't replace the text node unless the value actually changed.
+         * Replacing it unnecessarily triggers MutationObserver.
+         */
+        if (counter.textContent !== newText) {
+            counter.textContent = newText;
+        }
     }
 
     function updateOnlineOnlyButton() {
-        const button = document.querySelector(
-            `#${TOOLBAR_ID} [data-tns-online-only]`
-        );
+        const button =
+            document.querySelector(
+                `#${TOOLBAR_ID} [data-tns-online-only]`
+            );
 
         if (!button) {
             return;
@@ -428,29 +454,60 @@
 
         button.setAttribute(
             'aria-pressed',
-            onlineOnlyEnabled ? 'true' : 'false'
+            onlineOnlyEnabled
+                ? 'true'
+                : 'false'
         );
 
-        button.textContent = onlineOnlyEnabled
-            ? '✓ Online Only'
-            : 'Online Only';
+        const newText =
+            onlineOnlyEnabled
+                ? '✓ Online Only'
+                : 'Online Only';
+
+        if (button.textContent !== newText) {
+            button.textContent = newText;
+        }
     }
 
-    function toggleOnlineOnly() {
-        onlineOnlyEnabled = !onlineOnlyEnabled;
+    function toggleOnlineOnly(event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        onlineOnlyEnabled =
+            !onlineOnlyEnabled;
 
         applyOnlineFilter();
         updateOnlineOnlyButton();
         updateCounter();
     }
 
+    function handleSelectOnline(event) {
+        if (event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        selectOnlineAssets();
+        updateCounter();
+    }
+
     function addStyles() {
-        if (document.getElementById('tns-online-assets-style')) {
+        if (
+            document.getElementById(
+                STYLE_ID
+            )
+        ) {
             return;
         }
 
-        const style = document.createElement('style');
-        style.id = 'tns-online-assets-style';
+        const style =
+            document.createElement(
+                'style'
+            );
+
+        style.id = STYLE_ID;
 
         style.textContent = `
             .${FILTER_HIDDEN_CLASS} {
@@ -478,34 +535,20 @@
             }
         `;
 
-        document.head.appendChild(style);
+        document.head.appendChild(
+            style
+        );
     }
 
-    function findToolbarInsertionPoint(table) {
-        if (!table) {
-            return null;
-        }
-
-        /*
-         * Prefer putting the controls inside the DataTables wrapper when
-         * present so they visually belong to Syncro's asset table.
-         */
-        const wrapper = table.closest(
-            '.dataTables_wrapper, [data-testid="assets-table-wrapper"]'
-        );
+    function findToolbarInsertionPoint(
+        table
+    ) {
+        const wrapper =
+            table.closest(
+                '.dataTables_wrapper, [data-testid="assets-table-wrapper"]'
+            );
 
         if (wrapper) {
-            const topRow =
-                wrapper.querySelector('.row:first-child') ||
-                wrapper.firstElementChild;
-
-            if (topRow && topRow !== table) {
-                return {
-                    parent: topRow.parentElement,
-                    before: topRow.nextSibling
-                };
-            }
-
             return {
                 parent: wrapper,
                 before: table
@@ -519,23 +562,35 @@
     }
 
     function createToolbar() {
-        if (document.getElementById(TOOLBAR_ID)) {
+        if (
+            document.getElementById(
+                TOOLBAR_ID
+            )
+        ) {
             return;
         }
 
-        const table = getAssetsTable();
+        const table =
+            getAssetsTable();
 
         if (!table) {
             return;
         }
 
-        const insertionPoint = findToolbarInsertionPoint(table);
+        const insertion =
+            findToolbarInsertionPoint(
+                table
+            );
 
-        if (!insertionPoint?.parent) {
+        if (!insertion?.parent) {
             return;
         }
 
-        const toolbar = document.createElement('div');
+        const toolbar =
+            document.createElement(
+                'div'
+            );
+
         toolbar.id = TOOLBAR_ID;
 
         toolbar.innerHTML = `
@@ -552,7 +607,7 @@
                     class="btn btn-default btn-sm"
                     data-tns-online-only
                     aria-pressed="false"
-                    title="Show only assets currently detected as online"
+                    title="Show only online assets"
                 >
                     Online Only
                 </button>
@@ -561,7 +616,7 @@
                     type="button"
                     class="btn btn-default btn-sm"
                     data-tns-select-online
-                    title="Select all currently visible online assets and deselect visible offline assets"
+                    title="Select currently online assets"
                 >
                     Select Online
                 </button>
@@ -569,16 +624,26 @@
         `;
 
         toolbar
-            .querySelector('[data-tns-online-only]')
-            .addEventListener('click', toggleOnlineOnly);
+            .querySelector(
+                '[data-tns-online-only]'
+            )
+            .addEventListener(
+                'click',
+                toggleOnlineOnly
+            );
 
         toolbar
-            .querySelector('[data-tns-select-online]')
-            .addEventListener('click', selectOnlineAssets);
+            .querySelector(
+                '[data-tns-select-online]'
+            )
+            .addEventListener(
+                'click',
+                handleSelectOnline
+            );
 
-        insertionPoint.parent.insertBefore(
+        insertion.parent.insertBefore(
             toolbar,
-            insertionPoint.before
+            insertion.before
         );
     }
 
@@ -607,6 +672,51 @@
         }, 250);
     }
 
+    function mutationIsInsideOurToolbar(
+        mutation
+    ) {
+        const target =
+            mutation.target;
+
+        if (
+            target instanceof Element &&
+            (
+                target.id === TOOLBAR_ID ||
+                target.closest(
+                    `#${TOOLBAR_ID}`
+                )
+            )
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    const observer =
+        new MutationObserver(
+            mutations => {
+                /*
+                 * This is the v1.0.1 fix:
+                 *
+                 * Ignore mutations caused exclusively by our own toolbar.
+                 * Otherwise changing button text or counter text can cause
+                 * an endless observer/update loop.
+                 */
+                const realSyncroChange =
+                    mutations.some(
+                        mutation =>
+                            !mutationIsInsideOurToolbar(
+                                mutation
+                            )
+                    );
+
+                if (realSyncroChange) {
+                    scheduleUpdate();
+                }
+            }
+        );
+
     scheduleUpdate();
 
     window.addEventListener(
@@ -614,12 +724,11 @@
         scheduleUpdate
     );
 
-    const observer = new MutationObserver(() => {
-        scheduleUpdate();
-    });
-
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+    observer.observe(
+        document.body,
+        {
+            childList: true,
+            subtree: true
+        }
+    );
 })();
