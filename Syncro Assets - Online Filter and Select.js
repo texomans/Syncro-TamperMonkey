@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Assets - Online Filter and Select
 // @namespace    https://texomans.com/
-// @version      1.0.7
-// @description  Shows online asset counts and adds Online Only/Show All and Select/Deselect Online controls to Syncro Assets.
+// @version      1.1.3
+// @description  Live online asset counter with Online Only/Show All and Select/Deselect Online controls.
 // @match        https://*.syncromsp.com/customer_assets*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Online%20Filter%20and%20Select.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Online%20Filter%20and%20Select.js
@@ -13,29 +13,36 @@
 (function () {
     'use strict';
 
-    const INSTANCE_KEY =
-        '__TNS_SYNCRO_ASSETS_ONLINE_FILTER_107__';
+    const TOOLBAR_ID = 'tns-online-assets-toolbar';
+    const STYLE_ID = 'tns-online-assets-style';
 
-    if (window[INSTANCE_KEY]) {
-        return;
-    }
+    /*
+     * Do NOT put the word "online" in this class name.
+     *
+     * Our status detector recognizes "online" in certain
+     * Syncro classes, so our own filtering class must not
+     * accidentally look like an online status.
+     */
+    const FILTER_HIDDEN_CLASS = 'tns-filter-hidden';
 
-    window[INSTANCE_KEY] = true;
+    /*
+     * Cleanup from earlier versions.
+     */
+    const OLD_FILTER_HIDDEN_CLASS = 'tns-online-filter-hidden';
 
-    const TOOLBAR_ID =
-        'tns-online-assets-toolbar';
-
-    const STYLE_ID =
-        'tns-online-assets-style';
-
-    const HIDDEN_CLASS =
-        'tns-online-assets-hidden';
+    /*
+     * Live refresh interval.
+     *
+     * Once per second should be responsive without doing
+     * unnecessary DOM work several times per second.
+     */
+    const POLL_INTERVAL_MS = 1000;
 
     let onlineOnlyEnabled = false;
 
     /*
      * ------------------------------------------------------------
-     * Syncro table helpers
+     * TABLE HELPERS
      * ------------------------------------------------------------
      */
 
@@ -46,8 +53,7 @@
     }
 
     function getAssetRows() {
-        const table =
-            getAssetsTable();
+        const table = getAssetsTable();
 
         if (!table) {
             return [];
@@ -57,103 +63,346 @@
             table.querySelectorAll(
                 'tbody tr[data-testid^="asset-row-"], tbody tr'
             )
-        ).filter(row =>
-            !!row.querySelector(
+        ).filter(row => {
+            return !!row.querySelector(
+                'input.selectedId, input[type="checkbox"][value]'
+            );
+        });
+    }
+
+    function getAssetCheckbox(row) {
+        return (
+            row.querySelector(
+                'input.selectedId[type="checkbox"]'
+            ) ||
+            row.querySelector(
                 'input.selectedId'
+            ) ||
+            row.querySelector(
+                'input[type="checkbox"][value]'
             )
         );
     }
 
-    function getAssetCheckbox(row) {
-        return row.querySelector(
-            'input.selectedId'
-        );
+    function normalizeText(value) {
+        return (value || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
     }
 
     /*
      * ------------------------------------------------------------
-     * Exact Syncro Online/Offline detection
+     * ONLINE DETECTION
      * ------------------------------------------------------------
      *
-     * Syncro renders asset status as:
-     *
-     * <span
-     *   data-sidepack-react-class="legacy/asset/AssetStatus"
-     * >
-     *     <span class="tooltipper"
-     *           data-original-title="Online">
-     *         ...
-     *     </span>
-     * </span>
-     *
-     * Offline uses:
-     *
-     * data-original-title="Offline – Last Synced: ..."
-     *
-     * We use that exact status component.
+     * This preserves the broad detection method from the original
+     * version that successfully detected your online assets.
      * ------------------------------------------------------------
      */
 
-    function getAssetStatus(row) {
-        const statusComponent =
-            row.querySelector(
-                '[data-sidepack-react-class="legacy/asset/AssetStatus"]'
-            );
-
-        if (!statusComponent) {
-            return 'unknown';
+    function getStatusColumnIndex(table) {
+        if (!table) {
+            return -1;
         }
 
-        const tooltip =
-            statusComponent.querySelector(
-                '.tooltipper[data-original-title]'
+        const headers = Array.from(
+            table.querySelectorAll('thead th')
+        );
+
+        const statusTerms = [
+            'status',
+            'online',
+            'agent status',
+            'rmm status',
+            'syncro status'
+        ];
+
+        return headers.findIndex(header => {
+            const text = normalizeText(
+                header.textContent
             );
 
-        if (!tooltip) {
-            return 'unknown';
+            return statusTerms.some(term =>
+                text === term ||
+                text.includes(term)
+            );
+        });
+    }
+
+    function elementIndicatesOnline(element) {
+        if (!element) {
+            return false;
         }
 
-        const statusText =
+        const attributes = [
+            element.getAttribute('title'),
+            element.getAttribute('aria-label'),
+            element.getAttribute('data-original-title'),
+            element.getAttribute('data-status'),
+            element.getAttribute('data-state'),
+            element.getAttribute('data-online')
+        ]
+            .filter(Boolean)
+            .map(normalizeText);
+
+        if (
+            attributes.some(value =>
+                value === 'online' ||
+                value === 'true' ||
+                value.includes('currently online') ||
+                value.includes('agent online') ||
+                value.includes('device online')
+            )
+        ) {
+            return true;
+        }
+
+        const classText = normalizeText(
+            typeof element.className === 'string'
+                ? element.className
+                : ''
+        );
+
+        if (
+            /\bstatus-online\b/.test(classText) ||
+            /\basset-online\b/.test(classText) ||
+            /\bis-online\b/.test(classText) ||
+            /\bonline\b/.test(classText)
+        ) {
+            return true;
+        }
+
+        if (
+            classText.includes('text-success') &&
             (
-                tooltip.getAttribute(
-                    'data-original-title'
-                ) || ''
-            )
-                .trim()
-                .toLowerCase();
-
-        if (
-            statusText === 'online' ||
-            statusText.startsWith(
-                'online '
+                classText.includes('circle') ||
+                classText.includes('status') ||
+                element.tagName === 'I'
             )
         ) {
-            return 'online';
+            return true;
         }
+
+        /*
+         * Syncro's known green online circle.
+         */
+        if (
+            element.tagName === 'I' &&
+            classText.includes('fa-circle')
+        ) {
+            const style =
+                window.getComputedStyle(
+                    element
+                );
+
+            const color =
+                style.color ||
+                element.style.color ||
+                '';
+
+            if (
+                color.includes('42, 186, 138') ||
+                color.includes('rgb(42, 186, 138)')
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function elementIndicatesOffline(element) {
+        if (!element) {
+            return false;
+        }
+
+        const attributes = [
+            element.getAttribute('title'),
+            element.getAttribute('aria-label'),
+            element.getAttribute('data-original-title'),
+            element.getAttribute('data-status'),
+            element.getAttribute('data-state'),
+            element.getAttribute('data-online')
+        ]
+            .filter(Boolean)
+            .map(normalizeText);
 
         if (
-            statusText === 'offline' ||
-            statusText.startsWith(
-                'offline '
-            ) ||
-            statusText.startsWith(
-                'offline –'
-            ) ||
-            statusText.startsWith(
-                'offline -'
+            attributes.some(value =>
+                value === 'offline' ||
+                value === 'false' ||
+                value.includes('currently offline') ||
+                value.includes('agent offline') ||
+                value.includes('device offline')
             )
         ) {
-            return 'offline';
+            return true;
         }
 
-        return 'unknown';
+        const classText = normalizeText(
+            typeof element.className === 'string'
+                ? element.className
+                : ''
+        );
+
+        return (
+            /\bstatus-offline\b/.test(classText) ||
+            /\basset-offline\b/.test(classText) ||
+            /\bis-offline\b/.test(classText) ||
+            /\boffline\b/.test(classText)
+        );
+    }
+
+    function inspectElementForStatus(root) {
+        if (!root) {
+            return null;
+        }
+
+        const elements = [
+            root,
+            ...root.querySelectorAll(
+                [
+                    '[title]',
+                    '[aria-label]',
+                    '[data-original-title]',
+                    '[data-status]',
+                    '[data-state]',
+                    '[data-online]',
+                    '.online',
+                    '.offline',
+                    '.status-online',
+                    '.status-offline',
+                    '.asset-online',
+                    '.asset-offline',
+                    '.text-success',
+                    '.fa-circle'
+                ].join(',')
+            )
+        ];
+
+        /*
+         * Explicit Offline information wins first.
+         */
+        for (const element of elements) {
+            if (
+                elementIndicatesOffline(
+                    element
+                )
+            ) {
+                return false;
+            }
+        }
+
+        for (const element of elements) {
+            if (
+                elementIndicatesOnline(
+                    element
+                )
+            ) {
+                return true;
+            }
+        }
+
+        return null;
     }
 
     function isAssetOnline(row) {
-        return (
-            getAssetStatus(row) ===
-            'online'
+        /*
+         * Remove obsolete filtering class from older script versions.
+         *
+         * The old class included the word "online", so leaving it
+         * attached could create a false positive.
+         */
+        row.classList.remove(
+            OLD_FILTER_HIDDEN_CLASS
         );
+
+        const table =
+            getAssetsTable();
+
+        const statusColumnIndex =
+            getStatusColumnIndex(
+                table
+            );
+
+        /*
+         * Prefer a dedicated status column if Syncro exposes one.
+         */
+        if (statusColumnIndex >= 0) {
+            const cells =
+                row.querySelectorAll('td');
+
+            const statusCell =
+                cells[statusColumnIndex];
+
+            if (statusCell) {
+                const status =
+                    inspectElementForStatus(
+                        statusCell
+                    );
+
+                if (status !== null) {
+                    return status;
+                }
+
+                const text =
+                    normalizeText(
+                        statusCell.textContent
+                    );
+
+                if (text === 'online') {
+                    return true;
+                }
+
+                if (text === 'offline') {
+                    return false;
+                }
+            }
+        }
+
+        /*
+         * Known-good original behavior:
+         * inspect the entire asset row.
+         */
+        const rowStatus =
+            inspectElementForStatus(
+                row
+            );
+
+        if (rowStatus !== null) {
+            return rowStatus;
+        }
+
+        /*
+         * Conservative fallback.
+         */
+        const possibleLabels =
+            row.querySelectorAll(
+                'span, small, strong, div, i'
+            );
+
+        for (const element of possibleLabels) {
+            if (
+                normalizeText(
+                    element.textContent
+                ) === 'offline'
+            ) {
+                return false;
+            }
+        }
+
+        for (const element of possibleLabels) {
+            if (
+                normalizeText(
+                    element.textContent
+                ) === 'online'
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     function getOnlineRows() {
@@ -164,14 +413,14 @@
 
     /*
      * ------------------------------------------------------------
-     * Counter
+     * COUNTER
      * ------------------------------------------------------------
      */
 
     function updateCounter() {
         const counter =
             document.querySelector(
-                `#${TOOLBAR_ID} [data-tns-count]`
+                `#${TOOLBAR_ID} [data-tns-online-count]`
             );
 
         if (!counter) {
@@ -192,14 +441,50 @@
 
     /*
      * ------------------------------------------------------------
-     * Online Only / Show All
+     * ONLINE ONLY / SHOW ALL
      * ------------------------------------------------------------
      */
+
+    function applyOnlineFilter() {
+        if (!onlineOnlyEnabled) {
+            return;
+        }
+
+        /*
+         * Reevaluate every row.
+         *
+         * This allows:
+         *
+         *   offline -> online = automatically appears
+         *   online  -> offline = automatically disappears
+         */
+        getAssetRows().forEach(row => {
+            const online =
+                isAssetOnline(row);
+
+            row.classList.toggle(
+                FILTER_HIDDEN_CLASS,
+                !online
+            );
+        });
+    }
+
+    function clearOnlineFilter() {
+        getAssetRows().forEach(row => {
+            row.classList.remove(
+                FILTER_HIDDEN_CLASS
+            );
+
+            row.classList.remove(
+                OLD_FILTER_HIDDEN_CLASS
+            );
+        });
+    }
 
     function updateFilterButton() {
         const button =
             document.querySelector(
-                `#${TOOLBAR_ID} [data-tns-filter]`
+                `#${TOOLBAR_ID} [data-tns-online-only]`
             );
 
         if (!button) {
@@ -237,59 +522,37 @@
         }
     }
 
-    function showOnlineOnly() {
-        getAssetRows().forEach(row => {
-            row.classList.toggle(
-                HIDDEN_CLASS,
-                !isAssetOnline(row)
-            );
-        });
-
-        onlineOnlyEnabled = true;
-
-        updateFilterButton();
-    }
-
-    function showAllAssets() {
-        getAssetRows().forEach(row => {
-            row.classList.remove(
-                HIDDEN_CLASS
-            );
-        });
-
-        onlineOnlyEnabled = false;
-
-        updateFilterButton();
-    }
-
     function handleFilterClick(event) {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation();
 
+        onlineOnlyEnabled =
+            !onlineOnlyEnabled;
+
         if (onlineOnlyEnabled) {
-            showAllAssets();
+            applyOnlineFilter();
         } else {
-            /*
-             * Take a fresh snapshot immediately before filtering.
-             */
-            updateCounter();
-            showOnlineOnly();
+            clearOnlineFilter();
         }
+
+        updateFilterButton();
+        updateCounter();
+        updateSelectionButton();
     }
 
     /*
      * ------------------------------------------------------------
-     * Select Online / Deselect Online
+     * SELECT ONLINE / DESELECT ONLINE
      * ------------------------------------------------------------
      */
 
     function getOnlineSelectionState() {
-        const rows =
+        const onlineRows =
             getOnlineRows();
 
         const selected =
-            rows.filter(row => {
+            onlineRows.filter(row => {
                 const checkbox =
                     getAssetCheckbox(row);
 
@@ -297,18 +560,21 @@
             }).length;
 
         return {
-            total: rows.length,
-            selected: selected,
+            total:
+                onlineRows.length,
+
+            selected,
+
             allSelected:
-                rows.length > 0 &&
-                selected === rows.length
+                onlineRows.length > 0 &&
+                selected === onlineRows.length
         };
     }
 
     function updateSelectionButton() {
         const button =
             document.querySelector(
-                `#${TOOLBAR_ID} [data-tns-selection]`
+                `#${TOOLBAR_ID} [data-tns-select-online]`
             );
 
         if (!button) {
@@ -365,8 +631,8 @@
         }
 
         /*
-         * Use Syncro's actual checkbox click handler so its
-         * built-in bulk action controls update correctly.
+         * Click Syncro's actual checkbox so its own Bulk Actions
+         * logic receives the normal change event.
          */
         checkbox.click();
     }
@@ -384,21 +650,18 @@
         }
 
         /*
-         * If every online asset is selected:
-         *     deselect online assets.
+         * If every online machine is selected:
+         *     deselect them.
          *
          * Otherwise:
-         *     select all online assets.
+         *     select all current online machines.
          */
         const shouldSelect =
             !state.allSelected;
 
         getOnlineRows().forEach(row => {
-            const checkbox =
-                getAssetCheckbox(row);
-
             setCheckboxState(
-                checkbox,
+                getAssetCheckbox(row),
                 shouldSelect
             );
         });
@@ -408,7 +671,7 @@
 
     /*
      * ------------------------------------------------------------
-     * Styles
+     * STYLING
      * ------------------------------------------------------------
      */
 
@@ -430,7 +693,7 @@
             STYLE_ID;
 
         style.textContent = `
-            tr.${HIDDEN_CLASS} {
+            .${FILTER_HIDDEN_CLASS} {
                 display: none !important;
             }
 
@@ -462,7 +725,7 @@
 
     /*
      * ------------------------------------------------------------
-     * Toolbar
+     * TOOLBAR
      * ------------------------------------------------------------
      */
 
@@ -493,7 +756,7 @@
         toolbar.innerHTML = `
             <span
                 class="tns-online-count"
-                data-tns-count
+                data-tns-online-count
             >
                 🟢 0 Online / 0 Total
             </span>
@@ -503,7 +766,7 @@
                 <button
                     type="button"
                     class="btn btn-default btn-sm"
-                    data-tns-filter
+                    data-tns-online-only
                     title="Show only online assets"
                 >
                     Online Only
@@ -512,7 +775,7 @@
                 <button
                     type="button"
                     class="btn btn-default btn-sm"
-                    data-tns-selection
+                    data-tns-select-online
                     title="Select all online assets"
                 >
                     Select Online
@@ -523,7 +786,7 @@
 
         toolbar
             .querySelector(
-                '[data-tns-filter]'
+                '[data-tns-online-only]'
             )
             .addEventListener(
                 'click',
@@ -533,7 +796,7 @@
 
         toolbar
             .querySelector(
-                '[data-tns-selection]'
+                '[data-tns-select-online]'
             )
             .addEventListener(
                 'click',
@@ -562,54 +825,53 @@
 
     /*
      * ------------------------------------------------------------
-     * Initialization
+     * LIVE REFRESH
      * ------------------------------------------------------------
      *
-     * No MutationObserver.
-     * No recurring interval.
+     * Runs once every second for as long as this page is open.
      *
-     * We retry only until Syncro has finished rendering the
-     * asset rows, then initialization stops.
+     * It may:
+     *
+     *   - update Online / Total
+     *   - update the live Online Only filter
+     *   - update Select/Deselect Online button text
+     *   - recreate our toolbar if Syncro replaces part of the page
+     *
+     * It NEVER:
+     *
+     *   - toggles Online Only by itself
+     *   - selects an asset by itself
+     *   - deselects an asset by itself
      * ------------------------------------------------------------
      */
 
-    let attempts = 0;
-
-    function initialize() {
+    function refreshLiveState() {
         const table =
             getAssetsTable();
 
-        const rows =
-            getAssetRows();
-
-        /*
-         * We also make sure Syncro has rendered at least one
-         * AssetStatus component before calculating the counter.
-         */
-        const statusRendered =
-            !!document.querySelector(
-                '[data-sidepack-react-class="legacy/asset/AssetStatus"]'
-            );
-
-        if (
-            !table ||
-            rows.length === 0 ||
-            !statusRendered
-        ) {
-            attempts++;
-
-            if (attempts < 40) {
-                window.setTimeout(
-                    initialize,
-                    250
-                );
-            }
-
+        if (!table) {
             return;
         }
 
         addStyles();
         createToolbar();
+
+        /*
+         * Clean up obsolete filtering class from older versions.
+         */
+        getAssetRows().forEach(row => {
+            row.classList.remove(
+                OLD_FILTER_HIDDEN_CLASS
+            );
+        });
+
+        /*
+         * If Online Only is active, continually reapply the filter
+         * against Syncro's current status indicators.
+         */
+        if (onlineOnlyEnabled) {
+            applyOnlineFilter();
+        }
 
         updateCounter();
         updateFilterButton();
@@ -617,10 +879,9 @@
     }
 
     /*
-     * Keep Select/Deselect Online synchronized if you manually
-     * select/deselect assets using Syncro's checkboxes.
-     *
-     * This listener DOES NOT touch the Online Only filter.
+     * Keep the Select/Deselect label responsive immediately when
+     * the user manually changes a checkbox instead of waiting up
+     * to one second for the next poll.
      */
     document.addEventListener(
         'change',
@@ -646,5 +907,20 @@
         true
     );
 
-    initialize();
+    /*
+     * Initial run.
+     */
+    refreshLiveState();
+
+    /*
+     * Permanent live polling.
+     *
+     * No MutationObserver.
+     * No feedback loop.
+     */
+    window.setInterval(
+        refreshLiveState,
+        POLL_INTERVAL_MS
+    );
+
 })();
