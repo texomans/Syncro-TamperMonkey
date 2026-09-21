@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Tickets - Customer Quick Links
 // @namespace    https://texomans.com/
-// @version      1.0.1
-// @description  Adds a Customer quick-links dropdown to Syncro tickets for the customer page, open tickets, assets, and contacts. Links open in new tabs.
+// @version      1.0.2
+// @description  Adds customer quick links to Syncro ticket pages. Opens Customer Page, All Tickets, Assets, and End Users in new tabs.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Customer%20Quick%20Links.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Customer%20Quick%20Links.js
@@ -16,9 +16,16 @@
   const WIDGET_ID = 'tns-customer-quick-links';
   const MENU_ID = 'tns-customer-quick-links-menu';
   const STYLE_ID = 'tns-customer-quick-links-style';
-  const CUSTOMER_PATH_REGEX = /^\/customers\/(\d+)(?:\/.*)?\/?$/i;
 
-  const customerPageCache = new Map();
+  const CUSTOMER_PATH_REGEX =
+    /^\/customers\/(\d+)(?:\/.*)?\/?$/i;
+
+  const customerPageCache =
+    new Map();
+
+  // ------------------------------------------------------------
+  // General helpers
+  // ------------------------------------------------------------
 
   function cleanText(value) {
     return String(value || '')
@@ -28,12 +35,18 @@
   }
 
   function isVisible(element) {
-    if (!element || !element.isConnected) {
+    if (
+      !element ||
+      !element.isConnected
+    ) {
       return false;
     }
 
-    const style = getComputedStyle(element);
-    const rect = element.getBoundingClientRect();
+    const style =
+      getComputedStyle(element);
+
+    const rect =
+      element.getBoundingClientRect();
 
     return (
       style.display !== 'none' &&
@@ -44,16 +57,21 @@
     );
   }
 
+  // ------------------------------------------------------------
+  // Find the ticket's customer
+  // ------------------------------------------------------------
+
   function parseCustomerAnchor(anchor) {
     if (!anchor?.href) {
       return null;
     }
 
     try {
-      const url = new URL(
-        anchor.href,
-        location.origin
-      );
+      const url =
+        new URL(
+          anchor.href,
+          location.origin
+        );
 
       if (
         url.origin !==
@@ -73,7 +91,9 @@
 
       return {
         id: match[1],
+
         url,
+
         exactPage:
           /^\/customers\/\d+\/?$/i.test(
             url.pathname
@@ -158,10 +178,12 @@
         .map(
           (anchor) => ({
             anchor,
+
             parsed:
               parseCustomerAnchor(
                 anchor
               ),
+
             score:
               scoreCustomerAnchor(
                 anchor
@@ -205,64 +227,26 @@
     };
   }
 
-  function withCustomerFilter(
-    urlValue,
-    customerId
-  ) {
-    const url =
+  // ------------------------------------------------------------
+  // Build customer links
+  // ------------------------------------------------------------
+
+  function buildBaseLinks(customer) {
+    const customerPage =
       new URL(
-        urlValue,
+        `/customers/${customer.id}`,
         location.origin
       );
 
-    const hasCustomerFilter =
-      Array.from(
-        url.searchParams.keys()
-      ).some(
-        (key) =>
-          /customer.*id|organization.*id/i.test(
-            key
-          )
-      );
-
-    const hasCustomerInPath =
-      new RegExp(
-        `/customers/${customerId}(?:/|$)`,
-        'i'
-      ).test(
-        url.pathname
-      );
-
-    if (
-      !hasCustomerFilter &&
-      !hasCustomerInPath
-    ) {
-      url.searchParams.set(
-        'customer_id',
-        customerId
-      );
-    }
-
-    return url;
-  }
-
-  function buildFallbackLinks(
-    customer
-  ) {
-    const openTickets =
+    const allTickets =
       new URL(
         '/tickets',
         location.origin
       );
 
-    openTickets.searchParams.set(
+    allTickets.searchParams.set(
       'customer_id',
       customer.id
-    );
-
-    openTickets.searchParams.set(
-      'status',
-      'Not Closed'
     );
 
     const assets =
@@ -276,31 +260,44 @@
       customer.id
     );
 
-    const contacts =
+    /*
+     * Syncro's End Users / Contacts tab lives directly on
+     * the customer page using the #contacts hash.
+     *
+     * Example:
+     * /customers/4649389#contacts
+     */
+    const endUsers =
       new URL(
-        '/contacts',
+        `/customers/${customer.id}`,
         location.origin
       );
 
-    contacts.searchParams.set(
-      'customer_id',
-      customer.id
-    );
+    endUsers.hash =
+      'contacts';
 
     return {
       customer:
-        customer.href,
+        customerPage.href,
 
       tickets:
-        openTickets.href,
+        allTickets.href,
 
       assets:
         assets.href,
 
       contacts:
-        contacts.href
+        endUsers.href
     };
   }
+
+  // ------------------------------------------------------------
+  // Asset link discovery
+  //
+  // Syncro's customer page sometimes provides a more native
+  // customer-specific Assets link. We keep discovery for Assets,
+  // but Contacts/End Users is now explicitly /customers/ID#contacts.
+  // ------------------------------------------------------------
 
   function getAnchorContext(anchor) {
     const container =
@@ -316,9 +313,8 @@
     );
   }
 
-  function scoreNativeLink(
+  function scoreAssetLink(
     anchor,
-    kind,
     customerId
   ) {
     const href =
@@ -397,113 +393,33 @@
     }
 
     if (
-      kind ===
-      'tickets'
+      /^\/customer_assets\/?$/.test(
+        path
+      )
     ) {
-      if (
-        /^\/tickets\/?$/.test(
-          path
-        )
-      ) {
-        score += 55;
-      } else if (
-        customerInPath &&
-        /ticket/.test(path)
-      ) {
-        score += 40;
-      } else {
-        return -Infinity;
-      }
-
-      if (
-        /unresolved|open tickets?|not closed/.test(
-          text
-        )
-      ) {
-        score += 35;
-      }
-
-      if (
-        /tickets?/.test(
-          context
-        )
-      ) {
-        score += 15;
-      }
+      score += 55;
+    } else if (
+      customerInPath &&
+      /asset/.test(path)
+    ) {
+      score += 40;
+    } else {
+      return -Infinity;
     }
 
     if (
-      kind ===
-      'assets'
+      /assets?/.test(
+        context
+      )
     ) {
-      if (
-        /^\/customer_assets\/?$/.test(
-          path
-        )
-      ) {
-        score += 55;
-      } else if (
-        customerInPath &&
-        /asset/.test(path)
-      ) {
-        score += 40;
-      } else {
-        return -Infinity;
-      }
-
-      if (
-        /assets?/.test(
-          context
-        )
-      ) {
-        score += 15;
-      }
-    }
-
-    if (
-      kind ===
-      'contacts'
-    ) {
-      if (
-        /^\/contacts\/?$/.test(
-          path
-        )
-      ) {
-        score += 55;
-      } else if (
-        customerInPath &&
-        /(contact|end[-_ ]?user|user)/.test(
-          path
-        )
-      ) {
-        score += 50;
-      } else {
-        return -Infinity;
-      }
-
-      if (
-        /contacts?|end users?/.test(
-          text
-        )
-      ) {
-        score += 25;
-      }
-
-      if (
-        /contacts?|end users?/.test(
-          context
-        )
-      ) {
-        score += 15;
-      }
+      score += 15;
     }
 
     return score;
   }
 
-  function findNativeLink(
+  function findNativeAssetLink(
     doc,
-    kind,
     customerId
   ) {
     const candidates =
@@ -520,9 +436,8 @@
               ),
 
             score:
-              scoreNativeLink(
+              scoreAssetLink(
                 anchor,
-                kind,
                 customerId
               )
           })
@@ -545,40 +460,41 @@
     );
   }
 
-  function makeOpenTicketsUrl(
+  function ensureCustomerFilter(
     urlValue,
     customerId
   ) {
     const url =
-      withCustomerFilter(
+      new URL(
         urlValue,
-        customerId
+        location.origin
       );
 
-    const statusKeys =
+    const hasCustomerFilter =
       Array.from(
         url.searchParams.keys()
-      ).filter(
+      ).some(
         (key) =>
-          /status/i.test(
+          /customer.*id|organization.*id/i.test(
             key
           )
       );
 
-    if (
-      statusKeys.length
-    ) {
-      statusKeys.forEach(
-        (key) =>
-          url.searchParams.set(
-            key,
-            'Not Closed'
-          )
+    const hasCustomerInPath =
+      new RegExp(
+        `/customers/${customerId}(?:/|$)`,
+        'i'
+      ).test(
+        url.pathname
       );
-    } else {
+
+    if (
+      !hasCustomerFilter &&
+      !hasCustomerInPath
+    ) {
       url.searchParams.set(
-        'status',
-        'Not Closed'
+        'customer_id',
+        customerId
       );
     }
 
@@ -598,8 +514,8 @@
       );
     }
 
-    const fallback =
-      buildFallbackLinks(
+    const baseLinks =
+      buildBaseLinks(
         customer
       );
 
@@ -636,54 +552,29 @@
                   'text/html'
                 );
 
-            const nativeTickets =
-              findNativeLink(
-                doc,
-                'tickets',
-                customer.id
-              );
-
             const nativeAssets =
-              findNativeLink(
+              findNativeAssetLink(
                 doc,
-                'assets',
-                customer.id
-              );
-
-            const nativeContacts =
-              findNativeLink(
-                doc,
-                'contacts',
                 customer.id
               );
 
             return {
               customer:
-                customer.href,
+                baseLinks.customer,
 
               tickets:
-                nativeTickets
-                  ? makeOpenTicketsUrl(
-                      nativeTickets,
-                      customer.id
-                    )
-                  : fallback.tickets,
+                baseLinks.tickets,
 
               assets:
                 nativeAssets
-                  ? withCustomerFilter(
+                  ? ensureCustomerFilter(
                       nativeAssets,
                       customer.id
-                    ).href
-                  : fallback.assets,
+                    )
+                  : baseLinks.assets,
 
               contacts:
-                nativeContacts
-                  ? withCustomerFilter(
-                      nativeContacts,
-                      customer.id
-                    ).href
-                  : fallback.contacts
+                baseLinks.contacts
             };
           }
         )
@@ -692,11 +583,11 @@
             error
           ) => {
             console.debug(
-              '[TNS Customer Quick Links] Native link discovery failed; using fallback URLs.',
+              '[TNS Customer Quick Links] Customer page discovery failed; using direct links.',
               error
             );
 
-            return fallback;
+            return baseLinks;
           }
         );
 
@@ -707,6 +598,10 @@
 
     return promise;
   }
+
+  // ------------------------------------------------------------
+  // Styling
+  // ------------------------------------------------------------
 
   function ensureStyles() {
     if (
@@ -829,6 +724,10 @@
     );
   }
 
+  // ------------------------------------------------------------
+  // Dropdown
+  // ------------------------------------------------------------
+
   function createMenu(
     links
   ) {
@@ -851,14 +750,14 @@
       'menu'
     );
 
-    [
+    const menuItems = [
       [
         'customer',
         'Customer Page'
       ],
       [
         'tickets',
-        'Open Tickets'
+        'All Tickets'
       ],
       [
         'assets',
@@ -866,9 +765,11 @@
       ],
       [
         'contacts',
-        'Contacts'
+        'End Users'
       ]
-    ].forEach(
+    ];
+
+    menuItems.forEach(
       ([
         key,
         label
@@ -881,6 +782,9 @@
         anchor.href =
           links[key];
 
+        /*
+         * Always preserve the original ticket page.
+         */
         anchor.target =
           '_blank';
 
@@ -1069,12 +973,16 @@
     );
   }
 
+  // ------------------------------------------------------------
+  // Widget
+  // ------------------------------------------------------------
+
   function createWidget(
     customer
   ) {
     const menu =
       createMenu(
-        buildFallbackLinks(
+        buildBaseLinks(
           customer
         )
       );
@@ -1230,15 +1138,17 @@
     return widget;
   }
 
+  // ------------------------------------------------------------
+  // Mount
+  // ------------------------------------------------------------
+
   function mount() {
     ensureStyles();
 
     const customer =
       getCustomerInfo();
 
-    if (
-      !customer
-    ) {
+    if (!customer) {
       return false;
     }
 
@@ -1277,6 +1187,10 @@
 
     return true;
   }
+
+  // ------------------------------------------------------------
+  // Close behavior
+  // ------------------------------------------------------------
 
   document.addEventListener(
     'click',
@@ -1330,6 +1244,10 @@
     closeMenu,
     true
   );
+
+  // ------------------------------------------------------------
+  // Initial mount and Syncro rerender protection
+  // ------------------------------------------------------------
 
   mount();
 
