@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Asset - Add RustDesk Remote Access Button
 // @namespace    https://texomans.com/
-// @version      1.1.5
+// @version      1.1.6
 // @description  Adds RustDesk to Syncro asset pages. Uses a Remote Access dropdown when Syncro Remote Access exists, or a direct RustDesk button when it does not. Automatically closes the temporary RustDesk launch tab.
 // @match        https://*.syncromsp.com/customer_assets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Asset%20-%20Add%20RustDesk%20Remote%20Access%20Button.js
@@ -18,7 +18,7 @@
   const RUSTDESK_DIRECT_ATTR = 'data-tns-rustdesk-direct-button';
   const RUSTDESK_DIRECT_GROUP_ATTR = 'data-tns-rustdesk-direct-group';
 
-  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 4000;
+  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 3000;
 
   function normalizeUrl(value) {
     const trimmed = (value || '').trim();
