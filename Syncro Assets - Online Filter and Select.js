@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Assets - Online Filter and Select
 // @namespace    https://texomans.com/
-// @version      1.0.3
-// @description  Shows online asset counts and adds Online Only/Show All plus Select/Deselect Online controls to the Syncro Assets page.
+// @version      1.0.4
+// @description  Shows online asset counts with Online Only/Show All and Select/Deselect Online controls.
 // @match        https://*.syncromsp.com/customer_assets*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Online%20Filter%20and%20Select.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Online%20Filter%20and%20Select.js
@@ -13,23 +13,65 @@
 (function () {
     'use strict';
 
-    const TOOLBAR_ID = 'tns-online-assets-toolbar';
-    const STYLE_ID = 'tns-online-assets-style';
-    const FILTER_HIDDEN_CLASS = 'tns-online-filter-hidden';
+    /*
+     * v1.0.4
+     *
+     * Important design change:
+     * The Online Only state can ONLY change from an actual user click.
+     * MutationObservers may refresh the UI, but they never toggle state.
+     */
+
+    const INSTANCE_KEY =
+        '__TNS_SYNCRO_ASSETS_ONLINE_FILTER_V104__';
+
+    if (window[INSTANCE_KEY]) {
+        return;
+    }
+
+    window[INSTANCE_KEY] = true;
+
+    const TOOLBAR_ID =
+        'tns-online-assets-toolbar-v104';
+
+    const STYLE_ID =
+        'tns-online-assets-style-v104';
+
+    const FILTER_CLASS =
+        'tns-online-filter-hidden-v104';
+
+    /*
+     * IDs/classes used by previous versions.
+     *
+     * We neutralize them so an older running instance cannot fight
+     * with this version over the rows or buttons.
+     */
+    const LEGACY_TOOLBAR_ID =
+        'tns-online-assets-toolbar';
+
+    const LEGACY_FILTER_CLASS =
+        'tns-online-filter-hidden';
 
     let onlineOnlyEnabled = false;
     let updatePending = false;
 
-    function isAssetsIndexPage() {
-        return (
-            document.body?.dataset?.currentPage === 'assets-index' ||
-            !!document.querySelector('table[data-testid="assets-table"]')
-        );
+    function normalizeText(value) {
+        return (value || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .toLowerCase();
     }
 
     function getAssetsTable() {
         return document.querySelector(
             'table[data-testid="assets-table"]'
+        );
+    }
+
+    function isAssetsPage() {
+        return (
+            document.body?.dataset?.currentPage ===
+                'assets-index' ||
+            !!getAssetsTable()
         );
     }
 
@@ -51,14 +93,23 @@
         );
     }
 
-    function normalizeText(value) {
-        return (value || '')
-            .replace(/\s+/g, ' ')
-            .trim()
-            .toLowerCase();
+    function getAssetCheckbox(row) {
+        return (
+            row.querySelector(
+                'input.selectedId[type="checkbox"]'
+            ) ||
+            row.querySelector(
+                'input.selectedId'
+            ) ||
+            row.querySelector(
+                'input[type="checkbox"][value]'
+            )
+        );
     }
 
-    function getStatusColumnIndex(table) {
+    function getStatusColumnIndex() {
+        const table = getAssetsTable();
+
         if (!table) {
             return -1;
         }
@@ -76,9 +127,10 @@
         ];
 
         return headers.findIndex(header => {
-            const text = normalizeText(
-                header.textContent
-            );
+            const text =
+                normalizeText(
+                    header.textContent
+                );
 
             return terms.some(term =>
                 text === term ||
@@ -87,96 +139,144 @@
         });
     }
 
-    function elementIndicatesOffline(element) {
+    function getElementClassText(element) {
         if (!element) {
-            return false;
+            return '';
         }
 
-        const attributes = [
+        if (
+            typeof element.className ===
+            'string'
+        ) {
+            return normalizeText(
+                element.className
+            );
+        }
+
+        return '';
+    }
+
+    function getStatusAttributes(element) {
+        if (!element) {
+            return [];
+        }
+
+        return [
             element.getAttribute('title'),
-            element.getAttribute('aria-label'),
-            element.getAttribute('data-original-title'),
-            element.getAttribute('data-status'),
-            element.getAttribute('data-state'),
-            element.getAttribute('data-online')
+            element.getAttribute(
+                'aria-label'
+            ),
+            element.getAttribute(
+                'data-original-title'
+            ),
+            element.getAttribute(
+                'data-status'
+            ),
+            element.getAttribute(
+                'data-state'
+            ),
+            element.getAttribute(
+                'data-online'
+            )
         ]
             .filter(Boolean)
             .map(normalizeText);
+    }
+
+    function indicatesOffline(element) {
+        const values =
+            getStatusAttributes(element);
 
         if (
-            attributes.some(value =>
+            values.some(value =>
                 value === 'offline' ||
                 value === 'false' ||
-                value.includes('currently offline') ||
-                value.includes('agent offline') ||
-                value.includes('device offline')
+                value.includes(
+                    'currently offline'
+                ) ||
+                value.includes(
+                    'agent offline'
+                ) ||
+                value.includes(
+                    'device offline'
+                )
             )
         ) {
             return true;
         }
 
-        const classText = normalizeText(
-            typeof element.className === 'string'
-                ? element.className
-                : ''
-        );
+        const classes =
+            getElementClassText(element);
 
         return (
-            /\bstatus-offline\b/.test(classText) ||
-            /\basset-offline\b/.test(classText) ||
-            /\bis-offline\b/.test(classText) ||
-            /\boffline\b/.test(classText)
+            /\bstatus-offline\b/.test(
+                classes
+            ) ||
+            /\basset-offline\b/.test(
+                classes
+            ) ||
+            /\bis-offline\b/.test(
+                classes
+            ) ||
+            /\boffline\b/.test(
+                classes
+            )
         );
     }
 
-    function elementIndicatesOnline(element) {
-        if (!element) {
-            return false;
-        }
-
-        const attributes = [
-            element.getAttribute('title'),
-            element.getAttribute('aria-label'),
-            element.getAttribute('data-original-title'),
-            element.getAttribute('data-status'),
-            element.getAttribute('data-state'),
-            element.getAttribute('data-online')
-        ]
-            .filter(Boolean)
-            .map(normalizeText);
+    function indicatesOnline(element) {
+        const values =
+            getStatusAttributes(element);
 
         if (
-            attributes.some(value =>
+            values.some(value =>
                 value === 'online' ||
                 value === 'true' ||
-                value.includes('currently online') ||
-                value.includes('agent online') ||
-                value.includes('device online')
+                value.includes(
+                    'currently online'
+                ) ||
+                value.includes(
+                    'agent online'
+                ) ||
+                value.includes(
+                    'device online'
+                )
             )
         ) {
             return true;
         }
 
-        const classText = normalizeText(
-            typeof element.className === 'string'
-                ? element.className
-                : ''
-        );
+        const classes =
+            getElementClassText(element);
 
         if (
-            /\bstatus-online\b/.test(classText) ||
-            /\basset-online\b/.test(classText) ||
-            /\bis-online\b/.test(classText) ||
-            /\bonline\b/.test(classText)
+            /\bstatus-online\b/.test(
+                classes
+            ) ||
+            /\basset-online\b/.test(
+                classes
+            ) ||
+            /\bis-online\b/.test(
+                classes
+            ) ||
+            /\bonline\b/.test(
+                classes
+            )
         ) {
             return true;
         }
 
         if (
-            classText.includes('text-success') &&
+            classes.includes(
+                'text-success'
+            ) &&
             (
-                classText.includes('circle') ||
-                classText.includes('status') ||
+                classes.includes(
+                    'circle'
+                ) ||
+                classes.includes(
+                    'status'
+                ) ||
                 element.tagName === 'I'
             )
         ) {
@@ -186,7 +286,7 @@
         return false;
     }
 
-    function inspectElementForStatus(root) {
+    function inspectStatus(root) {
         if (!root) {
             return null;
         }
@@ -212,14 +312,22 @@
             )
         ];
 
+        /*
+         * Offline is checked first to prevent things such as
+         * "Last Online" from being mistaken for Online.
+         */
         for (const element of elements) {
-            if (elementIndicatesOffline(element)) {
+            if (
+                indicatesOffline(element)
+            ) {
                 return false;
             }
         }
 
         for (const element of elements) {
-            if (elementIndicatesOnline(element)) {
+            if (
+                indicatesOnline(element)
+            ) {
                 return true;
             }
         }
@@ -228,22 +336,19 @@
     }
 
     function isAssetOnline(row) {
-        const table = getAssetsTable();
-        const statusColumnIndex =
-            getStatusColumnIndex(table);
+        const statusColumn =
+            getStatusColumnIndex();
 
-        if (statusColumnIndex >= 0) {
+        if (statusColumn >= 0) {
             const cells =
                 row.querySelectorAll('td');
 
-            const statusCell =
-                cells[statusColumnIndex];
+            const cell =
+                cells[statusColumn];
 
-            if (statusCell) {
+            if (cell) {
                 const result =
-                    inspectElementForStatus(
-                        statusCell
-                    );
+                    inspectStatus(cell);
 
                 if (result !== null) {
                     return result;
@@ -251,32 +356,35 @@
 
                 const text =
                     normalizeText(
-                        statusCell.textContent
+                        cell.textContent
                     );
-
-                if (text === 'offline') {
-                    return false;
-                }
 
                 if (text === 'online') {
                     return true;
                 }
+
+                if (text === 'offline') {
+                    return false;
+                }
             }
         }
 
-        const rowResult =
-            inspectElementForStatus(row);
+        const result =
+            inspectStatus(row);
 
-        if (rowResult !== null) {
-            return rowResult;
+        if (result !== null) {
+            return result;
         }
 
-        const possibleLabels =
+        /*
+         * Conservative fallback.
+         */
+        const labels =
             row.querySelectorAll(
-                'span, small, strong, div, i'
+                'span, small, strong, i'
             );
 
-        for (const element of possibleLabels) {
+        for (const element of labels) {
             if (
                 normalizeText(
                     element.textContent
@@ -286,7 +394,7 @@
             }
         }
 
-        for (const element of possibleLabels) {
+        for (const element of labels) {
             if (
                 normalizeText(
                     element.textContent
@@ -296,21 +404,12 @@
             }
         }
 
+        /*
+         * Unknown status = not online.
+         *
+         * Safer for bulk script deployments.
+         */
         return false;
-    }
-
-    function getAssetCheckbox(row) {
-        return (
-            row.querySelector(
-                'input.selectedId[type="checkbox"]'
-            ) ||
-            row.querySelector(
-                'input.selectedId'
-            ) ||
-            row.querySelector(
-                'input[type="checkbox"][value]'
-            )
-        );
     }
 
     function getOnlineRows() {
@@ -320,19 +419,11 @@
     }
 
     function getOnlineSelectionState() {
-        const onlineRows =
+        const rows =
             getOnlineRows();
 
-        if (!onlineRows.length) {
-            return {
-                total: 0,
-                selected: 0,
-                allSelected: false
-            };
-        }
-
         const selected =
-            onlineRows.filter(row => {
+            rows.filter(row => {
                 const checkbox =
                     getAssetCheckbox(row);
 
@@ -340,10 +431,11 @@
             }).length;
 
         return {
-            total: onlineRows.length,
+            total: rows.length,
             selected,
             allSelected:
-                selected === onlineRows.length
+                rows.length > 0 &&
+                selected === rows.length
         };
     }
 
@@ -360,78 +452,37 @@
         }
 
         /*
-         * Use Syncro's real checkbox click handler so its native
-         * bulk-action system knows about the selection change.
+         * Use the real click so Syncro's native
+         * bulk-selection logic receives the event.
          */
         checkbox.click();
     }
 
-    function toggleOnlineSelection(event) {
-        event?.preventDefault();
-        event?.stopPropagation();
+    function applyFilter() {
+        const rows =
+            getAssetRows();
 
-        const state =
-            getOnlineSelectionState();
-
-        if (!state.total) {
-            return;
-        }
-
-        /*
-         * If all online assets are currently selected,
-         * deselect them.
-         *
-         * Otherwise select all online assets.
-         *
-         * Offline asset selections are deliberately left alone.
-         */
-        const shouldSelect =
-            !state.allSelected;
-
-        getOnlineRows().forEach(row => {
-            const checkbox =
-                getAssetCheckbox(row);
-
-            setCheckboxState(
-                checkbox,
-                shouldSelect
-            );
-        });
-
-        updateSelectionButton();
-    }
-
-    function applyOnlineFilter() {
-        getAssetRows().forEach(row => {
+        rows.forEach(row => {
             const online =
                 isAssetOnline(row);
 
             row.dataset.tnsOnline =
-                online ? 'true' : 'false';
+                online
+                    ? 'true'
+                    : 'false';
 
             row.classList.toggle(
-                FILTER_HIDDEN_CLASS,
-                onlineOnlyEnabled && !online
+                FILTER_CLASS,
+                onlineOnlyEnabled &&
+                !online
             );
         });
-    }
-
-    function toggleOnlineOnly(event) {
-        event?.preventDefault();
-        event?.stopPropagation();
-
-        onlineOnlyEnabled =
-            !onlineOnlyEnabled;
-
-        applyOnlineFilter();
-        updateFilterButton();
-        updateCounter();
     }
 
     function updateCounter() {
         const counter =
             document.querySelector(
-                `#${TOOLBAR_ID} [data-tns-online-count]`
+                `#${TOOLBAR_ID} [data-tns-count]`
             );
 
         if (!counter) {
@@ -441,27 +492,27 @@
         const rows =
             getAssetRows();
 
-        const online =
+        const onlineCount =
             rows.filter(
                 isAssetOnline
             ).length;
 
-        const newText =
-            `🟢 ${online} Online / ${rows.length} Total`;
+        const text =
+            `🟢 ${onlineCount} Online / ${rows.length} Total`;
 
         if (
             counter.textContent !==
-            newText
+            text
         ) {
             counter.textContent =
-                newText;
+                text;
         }
     }
 
     function updateFilterButton() {
         const button =
             document.querySelector(
-                `#${TOOLBAR_ID} [data-tns-online-only]`
+                `#${TOOLBAR_ID} [data-tns-filter]`
             );
 
         if (!button) {
@@ -472,6 +523,9 @@
             button.textContent =
                 'Show All';
 
+            button.title =
+                'Show all assets';
+
             button.classList.remove(
                 'btn-default'
             );
@@ -479,13 +533,13 @@
             button.classList.add(
                 'btn-success'
             );
-
-            button.title =
-                'Show all assets';
         } else {
             button.textContent =
                 'Online Only';
 
+            button.title =
+                'Show only online assets';
+
             button.classList.remove(
                 'btn-success'
             );
@@ -493,23 +547,13 @@
             button.classList.add(
                 'btn-default'
             );
-
-            button.title =
-                'Show only online assets';
         }
-
-        button.setAttribute(
-            'aria-pressed',
-            onlineOnlyEnabled
-                ? 'true'
-                : 'false'
-        );
     }
 
     function updateSelectionButton() {
         const button =
             document.querySelector(
-                `#${TOOLBAR_ID} [data-tns-select-online]`
+                `#${TOOLBAR_ID} [data-tns-selection]`
             );
 
         if (!button) {
@@ -526,6 +570,9 @@
             button.textContent =
                 'Deselect Online';
 
+            button.title =
+                'Deselect all online assets';
+
             button.classList.remove(
                 'btn-default'
             );
@@ -533,13 +580,13 @@
             button.classList.add(
                 'btn-warning'
             );
-
-            button.title =
-                'Deselect all online assets';
         } else {
             button.textContent =
                 'Select Online';
 
+            button.title =
+                'Select all online assets';
+
             button.classList.remove(
                 'btn-warning'
             );
@@ -547,10 +594,127 @@
             button.classList.add(
                 'btn-default'
             );
-
-            button.title =
-                'Select all online assets';
         }
+    }
+
+    function refreshUI() {
+        if (!isAssetsPage()) {
+            return;
+        }
+
+        createToolbar();
+
+        /*
+         * Re-apply the CURRENT filter state.
+         *
+         * This function never changes onlineOnlyEnabled.
+         */
+        applyFilter();
+        updateCounter();
+        updateFilterButton();
+        updateSelectionButton();
+    }
+
+    function handleFilterClick(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+
+        /*
+         * THIS is the only place in the entire script
+         * where onlineOnlyEnabled changes.
+         */
+        onlineOnlyEnabled =
+            !onlineOnlyEnabled;
+
+        applyFilter();
+        updateFilterButton();
+        updateCounter();
+    }
+
+    function handleSelectionClick(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+
+        const state =
+            getOnlineSelectionState();
+
+        if (!state.total) {
+            return;
+        }
+
+        const shouldSelect =
+            !state.allSelected;
+
+        getOnlineRows().forEach(row => {
+            setCheckboxState(
+                getAssetCheckbox(row),
+                shouldSelect
+            );
+        });
+
+        updateSelectionButton();
+    }
+
+    function neutralizeLegacyVersion() {
+        /*
+         * If an earlier script instance created its toolbar,
+         * remove that toolbar.
+         */
+        const oldToolbar =
+            document.getElementById(
+                LEGACY_TOOLBAR_ID
+            );
+
+        if (oldToolbar) {
+            oldToolbar.remove();
+        }
+
+        /*
+         * Add an invisible decoy with the old ID.
+         *
+         * Older running versions see this ID and therefore
+         * won't recreate their toolbar.
+         */
+        if (
+            !document.getElementById(
+                LEGACY_TOOLBAR_ID
+            )
+        ) {
+            const decoy =
+                document.createElement(
+                    'div'
+                );
+
+            decoy.id =
+                LEGACY_TOOLBAR_ID;
+
+            decoy.style.display =
+                'none';
+
+            decoy.setAttribute(
+                'aria-hidden',
+                'true'
+            );
+
+            document.body.appendChild(
+                decoy
+            );
+        }
+
+        /*
+         * Remove old filtering from every asset row.
+         */
+        document
+            .querySelectorAll(
+                `.${LEGACY_FILTER_CLASS}`
+            )
+            .forEach(row => {
+                row.classList.remove(
+                    LEGACY_FILTER_CLASS
+                );
+            });
     }
 
     function addStyles() {
@@ -571,7 +735,14 @@
             STYLE_ID;
 
         style.textContent = `
-            .${FILTER_HIDDEN_CLASS} {
+            /*
+             * Neutralize filtering from versions <= 1.0.3.
+             */
+            tr.${LEGACY_FILTER_CLASS} {
+                display: table-row !important;
+            }
+
+            tr.${FILTER_CLASS} {
                 display: none !important;
             }
 
@@ -628,7 +799,7 @@
         toolbar.innerHTML = `
             <span
                 class="tns-online-count"
-                data-tns-online-count
+                data-tns-count
             >
                 🟢 0 Online / 0 Total
             </span>
@@ -637,8 +808,7 @@
                 <button
                     type="button"
                     class="btn btn-default btn-sm"
-                    data-tns-online-only
-                    aria-pressed="false"
+                    data-tns-filter
                 >
                     Online Only
                 </button>
@@ -646,7 +816,7 @@
                 <button
                     type="button"
                     class="btn btn-default btn-sm"
-                    data-tns-select-online
+                    data-tns-selection
                 >
                     Select Online
                 </button>
@@ -655,20 +825,22 @@
 
         toolbar
             .querySelector(
-                '[data-tns-online-only]'
+                '[data-tns-filter]'
             )
             .addEventListener(
                 'click',
-                toggleOnlineOnly
+                handleFilterClick,
+                true
             );
 
         toolbar
             .querySelector(
-                '[data-tns-select-online]'
+                '[data-tns-selection]'
             )
             .addEventListener(
                 'click',
-                toggleOnlineSelection
+                handleSelectionClick,
+                true
             );
 
         const wrapper =
@@ -682,28 +854,15 @@
                 table
             );
         } else {
-            table.parentElement?.insertBefore(
-                toolbar,
-                table
-            );
+            table.parentElement
+                ?.insertBefore(
+                    toolbar,
+                    table
+                );
         }
     }
 
-    function update() {
-        if (!isAssetsIndexPage()) {
-            return;
-        }
-
-        addStyles();
-        createToolbar();
-
-        applyOnlineFilter();
-        updateCounter();
-        updateFilterButton();
-        updateSelectionButton();
-    }
-
-    function scheduleUpdate() {
+    function scheduleRefresh() {
         if (updatePending) {
             return;
         }
@@ -712,60 +871,72 @@
 
         window.setTimeout(() => {
             updatePending = false;
-            update();
-        }, 250);
+
+            /*
+             * Again: this only REFRESHES.
+             * It never toggles filter state.
+             */
+            refreshUI();
+        }, 200);
     }
 
-    function mutationIsInsideOurToolbar(
-        mutation
-    ) {
-        const target =
-            mutation.target;
+    addStyles();
+    neutralizeLegacyVersion();
+    refreshUI();
 
-        if (
-            target instanceof Element &&
-            (
-                target.id === TOOLBAR_ID ||
-                target.closest(
-                    `#${TOOLBAR_ID}`
-                )
-            )
-        ) {
-            return true;
-        }
-
-        if (
-            target instanceof Text &&
-            target.parentElement?.closest(
-                `#${TOOLBAR_ID}`
-            )
-        ) {
-            return true;
-        }
-
-        return false;
-    }
-
+    /*
+     * Watch for Syncro replacing/reloading asset rows.
+     *
+     * Changes here only cause refreshUI().
+     * They cannot toggle Online Only.
+     */
     const observer =
         new MutationObserver(
             mutations => {
-                const realSyncroChange =
+                const relevant =
                     mutations.some(
-                        mutation =>
-                            !mutationIsInsideOurToolbar(
-                                mutation
-                            )
+                        mutation => {
+                            if (
+                                mutation.target
+                                    instanceof Element
+                            ) {
+                                if (
+                                    mutation.target.closest(
+                                        `#${TOOLBAR_ID}`
+                                    )
+                                ) {
+                                    return false;
+                                }
+
+                                if (
+                                    mutation.target.id ===
+                                    LEGACY_TOOLBAR_ID
+                                ) {
+                                    return false;
+                                }
+                            }
+
+                            return true;
+                        }
                     );
 
-                if (realSyncroChange) {
-                    scheduleUpdate();
+                if (relevant) {
+                    scheduleRefresh();
                 }
             }
         );
 
+    observer.observe(
+        document.body,
+        {
+            childList: true,
+            subtree: true
+        }
+    );
+
     /*
-     * Keep Select/Deselect Online synchronized if the user manually
-     * changes asset checkboxes or uses Syncro's own selection controls.
+     * Update Select/Deselect Online if you manually
+     * click one of Syncro's asset checkboxes.
      */
     document.addEventListener(
         'change',
@@ -774,15 +945,12 @@
                 event.target;
 
             if (
-                target instanceof HTMLInputElement &&
-                target.type === 'checkbox' &&
-                (
-                    target.classList.contains(
-                        'selectedId'
-                    ) ||
-                    target.closest(
-                        'table[data-testid="assets-table"]'
-                    )
+                target instanceof
+                    HTMLInputElement &&
+                target.type ===
+                    'checkbox' &&
+                target.closest(
+                    'table[data-testid="assets-table"]'
                 )
             ) {
                 window.setTimeout(
@@ -794,18 +962,8 @@
         true
     );
 
-    scheduleUpdate();
-
     window.addEventListener(
         'load',
-        scheduleUpdate
-    );
-
-    observer.observe(
-        document.body,
-        {
-            childList: true,
-            subtree: true
-        }
+        scheduleRefresh
     );
 })();
