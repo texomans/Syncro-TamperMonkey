@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Tickets - Copy Toolbar and Sticky Header
 // @namespace    https://texomans.com/
-// @version      1.0.7
-// @description  Syncro-styled ticket copy tools plus a solid responsive fixed ticket header that respects Guided Resolution.
+// @version      1.0.8
+// @description  Syncro-styled ticket copy tools plus a solid responsive fixed ticket header that respects Guided Resolution and disables sticky mode on mobile.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
@@ -19,10 +19,16 @@
   const SPACER_ID = 'tns-ticket-sticky-header-spacer';
 
   /*
+   * Sticky header is disabled at this width and below.
+   * Copy tools remain available.
+   */
+  const MOBILE_BREAKPOINT = 900;
+
+  /*
    * Re-check the ticket-content width ten times per second.
    *
-   * This is deliberately simple and inexpensive, and makes
-   * the header follow Guided Resolution while it opens/closes.
+   * This keeps the fixed header synchronized with
+   * Guided Resolution opening/closing.
    */
   const POLL_MS = 100;
 
@@ -30,6 +36,7 @@
   let stickyNavEls = null;
   let stickyPollTimer = null;
   let stickyLayoutRaf = 0;
+  let stickyEnabled = false;
 
   // ============================================================
   // General helpers
@@ -85,6 +92,12 @@
     return match
       ? match[1]
       : '';
+  }
+
+  function isMobileLayout() {
+    return window.matchMedia(
+      `(max-width: ${MOBILE_BREAKPOINT}px)`
+    ).matches;
   }
 
   // ============================================================
@@ -576,12 +589,12 @@
     }
 
     /*
-     * Normally Ticket Address contains
-     * only a selector name such as:
+     * Ticket Address is normally only
+     * a location label such as:
      *
      * Customer Address
      *
-     * That is NOT the address.
+     * Copy the actual address instead.
      */
     return getPrimaryAddress();
   }
@@ -1032,12 +1045,30 @@
     );
 
     [
-      ['Customer', 'customer'],
-      ['Contact', 'contact'],
-      ['Phone', 'phone'],
-      ['Mobile', 'mobile'],
-      ['Email', 'email'],
-      ['Address', 'address']
+      [
+        'Customer',
+        'customer'
+      ],
+      [
+        'Contact',
+        'contact'
+      ],
+      [
+        'Phone',
+        'phone'
+      ],
+      [
+        'Mobile',
+        'mobile'
+      ],
+      [
+        'Email',
+        'email'
+      ],
+      [
+        'Address',
+        'address'
+      ]
     ].forEach(
       ([
         label,
@@ -1296,15 +1327,11 @@
   }
 
   /*
-   * IMPORTANT:
+   * Measure a normal ticket-content row rather than
+   * the fixed header itself.
    *
-   * Do not measure the fixed header itself.
-   * Do not rely on Guided Resolution's own width.
-   *
-   * Measure a NORMAL ticket-content row that Syncro
-   * itself resizes when Guided Resolution opens/closes.
-   *
-   * The workflow/status row is perfect for this.
+   * This lets the header track Guided Resolution
+   * opening and closing.
    */
   function findResponsiveWidthAnchor(
     mainInner
@@ -1332,10 +1359,6 @@
       return mainInner;
     }
 
-    /*
-     * Prefer the inner Bootstrap col because
-     * its edges correspond to the usable ticket area.
-     */
     return (
       directChild.querySelector(
         ':scope > .col-md-12'
@@ -1357,9 +1380,9 @@
     /*
      * Syncro structure:
      *
-     * Back row
-     * Ticket # / actions row
-     * Subject row
+     * Back
+     * Ticket # / actions
+     * Subject
      */
     let titleRow =
       backRow.nextElementSibling;
@@ -1504,9 +1527,6 @@
       return true;
     }
 
-    /*
-     * rgb() = opaque.
-     */
     if (
       typeof match[1] ===
       'undefined'
@@ -1610,10 +1630,11 @@
   }
 
   /*
-   * Capture how Syncro normally positions each header row
-   * relative to our responsive ticket-body reference.
+   * Capture how Syncro normally positions each row
+   * relative to the responsive ticket-content area.
    *
-   * This happens BEFORE position: fixed is applied.
+   * This is always done while the rows are in their
+   * normal, non-fixed Syncro layout.
    */
   function captureNaturalGeometry(
     parts
@@ -1670,10 +1691,6 @@
       Math.round(value) +
       'px';
 
-    /*
-     * Avoid unnecessary DOM style changes
-     * during the 100ms layout polling.
-     */
     if (
       element.style
         .getPropertyValue(
@@ -1686,6 +1703,170 @@
           px
         );
     }
+  }
+
+  function clearStickyInlineStyles(
+    row
+  ) {
+    if (!row) {
+      return;
+    }
+
+    row.style.removeProperty(
+      'top'
+    );
+
+    row.style.removeProperty(
+      'left'
+    );
+
+    row.style.removeProperty(
+      'width'
+    );
+
+    row.style.removeProperty(
+      'right'
+    );
+  }
+
+  function getSpacer() {
+    return document.getElementById(
+      SPACER_ID
+    );
+  }
+
+  // ============================================================
+  // Enable / disable sticky mode
+  // ============================================================
+
+  function disableStickyHeader(
+    parts
+  ) {
+    if (!parts) {
+      return;
+    }
+
+    parts.backRow
+      .classList.remove(
+        'tns-sticky-row',
+        'tns-sticky-back-row'
+      );
+
+    parts.titleRow
+      .classList.remove(
+        'tns-sticky-row',
+        'tns-sticky-title-row'
+      );
+
+    if (
+      parts.subjectRow
+    ) {
+      parts.subjectRow
+        .classList.remove(
+          'tns-sticky-row',
+          'tns-sticky-subject-row'
+        );
+    }
+
+    /*
+     * Remove our fixed positioning completely.
+     * Syncro returns to its normal native layout.
+     */
+    clearStickyInlineStyles(
+      parts.backRow
+    );
+
+    clearStickyInlineStyles(
+      parts.titleRow
+    );
+
+    clearStickyInlineStyles(
+      parts.subjectRow
+    );
+
+    /*
+     * Fixed rows no longer need replacement
+     * document-flow height on mobile.
+     */
+    const spacer =
+      getSpacer();
+
+    if (spacer) {
+      spacer.style.height =
+        '0px';
+
+      spacer.style.display =
+        'none';
+    }
+
+    stickyEnabled =
+      false;
+  }
+
+  function enableStickyHeader(
+    parts
+  ) {
+    if (
+      !parts ||
+      stickyEnabled ||
+      isMobileLayout()
+    ) {
+      return;
+    }
+
+    /*
+     * If the browser was previously in mobile mode,
+     * the header is currently back in Syncro's normal
+     * document flow.
+     *
+     * Recapture its natural geometry before fixing it.
+     */
+    parts.widthAnchor =
+      findResponsiveWidthAnchor(
+        parts.mainInner
+      ) ||
+      parts.widthAnchor;
+
+    captureNaturalGeometry(
+      parts
+    );
+
+    updateStickyBackground(
+      parts
+    );
+
+    parts.backRow
+      .classList.add(
+        'tns-sticky-row',
+        'tns-sticky-back-row'
+      );
+
+    parts.titleRow
+      .classList.add(
+        'tns-sticky-row',
+        'tns-sticky-title-row'
+      );
+
+    if (
+      parts.subjectRow
+    ) {
+      parts.subjectRow
+        .classList.add(
+          'tns-sticky-row',
+          'tns-sticky-subject-row'
+        );
+    }
+
+    const spacer =
+      getSpacer();
+
+    if (spacer) {
+      spacer.style.display =
+        'block';
+    }
+
+    stickyEnabled =
+      true;
   }
 
   function placeRow(
@@ -1701,17 +1882,6 @@
       return 0;
     }
 
-    /*
-     * Reapply Syncro's original left/right
-     * offsets against the CURRENT ticket-body
-     * width.
-     *
-     * When Guided Resolution opens:
-     *   bounds shrinks
-     *
-     * When Guided Resolution closes:
-     *   bounds expands again
-     */
     const left =
       bounds.left +
       geometry.leftInset;
@@ -1760,8 +1930,44 @@
     const parts =
       stickyRowsCache;
 
+    if (!parts) {
+      return;
+    }
+
+    /*
+     * MOBILE
+     *
+     * Leave Syncro's ticket header completely native.
+     *
+     * The copy toolbar still exists and still works,
+     * but Back / Ticket # / Actions / Subject scroll
+     * normally with the ticket page.
+     */
+    if (isMobileLayout()) {
+      if (stickyEnabled) {
+        disableStickyHeader(
+          parts
+        );
+      }
+
+      return;
+    }
+
+    /*
+     * DESKTOP / TABLET
+     *
+     * If we just came back from mobile size,
+     * turn sticky mode back on and recalculate
+     * its natural geometry.
+     */
+    if (!stickyEnabled) {
+      enableStickyHeader(
+        parts
+      );
+    }
+
     if (
-      !parts ||
+      !stickyEnabled ||
       !parts.geometry
     ) {
       return;
@@ -1777,8 +1983,7 @@
     }
 
     /*
-     * Also allows the header to follow a
-     * Syncro light/dark-theme change.
+     * Also follows Syncro light/dark-theme changes.
      */
     updateStickyBackground(
       parts
@@ -1791,7 +1996,7 @@
       navBottom;
 
     /*
-     * Exact fixed stack:
+     * Fixed stack:
      *
      * Back
      * Ticket # / controls
@@ -1823,11 +2028,12 @@
     }
 
     const spacer =
-      document.getElementById(
-        SPACER_ID
-      );
+      getSpacer();
 
     if (spacer) {
+      spacer.style.display =
+        'block';
+
       setPxStyle(
         spacer,
         'height',
@@ -1841,7 +2047,9 @@
   }
 
   function scheduleStickyLayout() {
-    if (stickyLayoutRaf) {
+    if (
+      stickyLayoutRaf
+    ) {
       return;
     }
 
@@ -1861,17 +2069,19 @@
   // ============================================================
 
   function startResponsivePolling() {
-    if (stickyPollTimer) {
+    if (
+      stickyPollTimer
+    ) {
       return;
     }
 
     /*
-     * The non-fixed workflow row tells us
-     * Syncro's CURRENT usable ticket width.
+     * Polling makes this insensitive to whatever
+     * internal classes Syncro uses when Guided
+     * Resolution opens/closes.
      *
-     * Polling means we don't care what
-     * classes/states Syncro uses internally
-     * for Guided Resolution.
+     * It also detects moving across the 900px
+     * mobile breakpoint.
      */
     stickyPollTimer =
       setInterval(
@@ -1911,6 +2121,9 @@
     stickyRowsCache =
       null;
 
+    stickyEnabled =
+      false;
+
     const parts =
       getStickyHeaderRows();
 
@@ -1925,59 +2138,17 @@
       return false;
     }
 
-    /*
-     * CRITICAL:
-     *
-     * Measure the normal Syncro page first.
-     */
-    captureNaturalGeometry(
-      parts
-    );
-
-    updateStickyBackground(
-      parts
-    );
-
     stickyRowsCache =
       parts;
 
     /*
-     * Same simple fixed-row strategy:
+     * Create the spacer once.
      *
-     * no clones
-     * no moving DOM elements
-     * no scroll activation
-     */
-    parts.backRow
-      .classList.add(
-        'tns-sticky-row',
-        'tns-sticky-back-row'
-      );
-
-    parts.titleRow
-      .classList.add(
-        'tns-sticky-row',
-        'tns-sticky-title-row'
-      );
-
-    if (
-      parts.subjectRow
-    ) {
-      parts.subjectRow
-        .classList.add(
-          'tns-sticky-row',
-          'tns-sticky-subject-row'
-        );
-    }
-
-    /*
-     * Replace the vertical height removed
-     * by position: fixed.
+     * Desktop sticky mode uses it.
+     * Mobile mode hides it.
      */
     let spacer =
-      document.getElementById(
-        SPACER_ID
-      );
+      getSpacer();
 
     if (!spacer) {
       spacer =
@@ -2015,9 +2186,21 @@
       }
     }
 
-    applyStickyLayout();
+    /*
+     * Begin in a neutral state.
+     *
+     * applyStickyLayout() decides whether
+     * sticky should actually be enabled.
+     */
+    spacer.style.display =
+      'none';
+
+    spacer.style.height =
+      '0px';
 
     startResponsivePolling();
+
+    applyStickyLayout();
 
     return true;
   }
@@ -2101,12 +2284,15 @@
 
       /* ========================================================
        * Fixed ticket header
+       *
+       * These classes are never present on mobile.
        * ======================================================== */
 
       .tns-sticky-row {
         position: fixed !important;
 
-        z-index: 10 !important;
+        z-index:
+          10 !important;
 
         box-sizing:
           border-box !important;
@@ -2116,8 +2302,7 @@
          * negative horizontal margins.
          *
          * Fixed rows already receive exact
-         * left/width values from JS, so those
-         * margins must be removed.
+         * left/width values from JS.
          */
         margin-left:
           0 !important;
@@ -2132,8 +2317,7 @@
           0 !important;
 
         /*
-         * SOLID background that automatically
-         * matches Syncro's current theme.
+         * Match Syncro's ticket-area background.
          */
         background:
           var(
@@ -2160,15 +2344,8 @@
       }
 
       /*
-       * The stock Syncro title row is:
-       *
-       *   col-md-4  Ticket #
-       *   col-md-8  Buttons
-       *
-       * That's a LOT of wasted horizontal
-       * space when Guided Resolution opens.
-       *
-       * While fixed, use flex instead.
+       * Use available width efficiently when
+       * Guided Resolution is open.
        */
       .tns-sticky-title-row {
         z-index:
@@ -2185,8 +2362,7 @@
       }
 
       /*
-       * Ticket number consumes only the
-       * width it actually needs.
+       * Ticket number only consumes what it needs.
        */
       .tns-sticky-title-row > .col-md-4 {
         float:
@@ -2203,12 +2379,11 @@
       }
 
       /*
-       * Action bar receives ALL remaining
-       * horizontal space.
+       * Buttons receive the rest of the row.
        *
-       * It may wrap if genuinely necessary,
-       * but it will automatically UNWRAP when
-       * Guided Resolution closes again.
+       * They can wrap when Guided Resolution
+       * genuinely makes the pane too narrow,
+       * then automatically unwrap when it closes.
        */
       .tns-sticky-title-row > .title-btns,
       .tns-sticky-title-row > .btn-bar {
@@ -2243,10 +2418,6 @@
           4px;
       }
 
-      /*
-       * Don't let Syncro's child floats interfere
-       * with our responsive flex layout.
-       */
       .tns-sticky-title-row > .title-btns > *,
       .tns-sticky-title-row > .btn-bar > * {
         float:
@@ -2270,44 +2441,21 @@
       #${SPACER_ID} {
         width:
           100%;
+
+        display:
+          none;
+
+        height:
+          0;
       }
 
       /*
-       * On genuinely narrow/mobile layouts,
-       * intentionally stack cleanly instead
-       * of trying to squeeze everything onto
-       * one line.
+       * Sticky is completely disabled by JS
+       * at 900px and below.
+       *
+       * We still slightly tighten our toolbar
+       * buttons at narrower desktop/tablet widths.
        */
-      @media (max-width: 900px) {
-        .tns-sticky-title-row {
-          align-items:
-            flex-start !important;
-
-          flex-wrap:
-            wrap !important;
-        }
-
-        .tns-sticky-title-row > .col-md-4 {
-          width:
-            100% !important;
-
-          flex:
-            0 0 100% !important;
-        }
-
-        .tns-sticky-title-row > .title-btns,
-        .tns-sticky-title-row > .btn-bar {
-          width:
-            100% !important;
-
-          flex:
-            0 0 100% !important;
-
-          justify-content:
-            flex-start !important;
-        }
-      }
-
       @media (max-width: 1100px) {
         #${TOOLBAR_ID} .btn {
           padding-left:
@@ -2351,6 +2499,9 @@
     );
   }
 
+  /*
+   * Close Copy dropdown when clicking elsewhere.
+   */
   document.addEventListener(
     'click',
     event => {
@@ -2379,7 +2530,7 @@
   );
 
   /*
-   * Syncro mounts some components
+   * Syncro mounts some ticket components
    * asynchronously.
    */
   let attempts =
