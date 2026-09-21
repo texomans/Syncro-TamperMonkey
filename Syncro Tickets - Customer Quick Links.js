@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Tickets - Customer Quick Links
 // @namespace    https://texomans.com/
-// @version      1.0.2
-// @description  Adds customer quick links to Syncro ticket pages. Opens Customer Page, All Tickets, Assets, and End Users in new tabs.
+// @version      1.0.3
+// @description  Adds customer quick links to Syncro ticket pages for Customer Page, All Tickets, Assets, and End Users. Links open in new tabs.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Customer%20Quick%20Links.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Customer%20Quick%20Links.js
@@ -58,7 +58,7 @@
   }
 
   // ------------------------------------------------------------
-  // Find the ticket's customer
+  // Find customer from current ticket
   // ------------------------------------------------------------
 
   function parseCustomerAnchor(anchor) {
@@ -228,23 +228,29 @@
   }
 
   // ------------------------------------------------------------
-  // Build customer links
+  // Default/fallback links
   // ------------------------------------------------------------
 
-  function buildBaseLinks(customer) {
+  function buildFallbackLinks(customer) {
     const customerPage =
       new URL(
         `/customers/${customer.id}`,
         location.origin
       );
 
-    const allTickets =
+    /*
+     * This is only a fallback.
+     *
+     * The preferred All Tickets link is discovered directly
+     * from the customer's Syncro page below.
+     */
+    const tickets =
       new URL(
         '/tickets',
         location.origin
       );
 
-    allTickets.searchParams.set(
+    tickets.searchParams.set(
       'customer_id',
       customer.id
     );
@@ -261,11 +267,9 @@
     );
 
     /*
-     * Syncro's End Users / Contacts tab lives directly on
-     * the customer page using the #contacts hash.
+     * Confirmed Syncro End Users / Contacts tab format:
      *
-     * Example:
-     * /customers/4649389#contacts
+     * /customers/123456#contacts
      */
     const endUsers =
       new URL(
@@ -281,7 +285,7 @@
         customerPage.href,
 
       tickets:
-        allTickets.href,
+        tickets.href,
 
       assets:
         assets.href,
@@ -292,11 +296,7 @@
   }
 
   // ------------------------------------------------------------
-  // Asset link discovery
-  //
-  // Syncro's customer page sometimes provides a more native
-  // customer-specific Assets link. We keep discovery for Assets,
-  // but Contacts/End Users is now explicitly /customers/ID#contacts.
+  // Discover Syncro's native customer-specific links
   // ------------------------------------------------------------
 
   function getAnchorContext(anchor) {
@@ -309,12 +309,13 @@
       container?.textContent
     ).slice(
       0,
-      1400
+      1600
     );
   }
 
-  function scoreAssetLink(
+  function scoreNativeLink(
     anchor,
+    kind,
     customerId
   ) {
     const href =
@@ -381,7 +382,7 @@
       customerInPath ||
       customerInQuery
     ) {
-      score += 45;
+      score += 60;
     }
 
     if (
@@ -389,37 +390,117 @@
         text
       )
     ) {
-      score += 20;
+      score += 30;
     }
 
-    if (
-      /^\/customer_assets\/?$/.test(
-        path
-      )
-    ) {
-      score += 55;
-    } else if (
-      customerInPath &&
-      /asset/.test(path)
-    ) {
-      score += 40;
-    } else {
-      return -Infinity;
-    }
+    // ----------------------------------------------------------
+    // Tickets
+    // ----------------------------------------------------------
 
     if (
-      /assets?/.test(
-        context
-      )
+      kind ===
+      'tickets'
     ) {
-      score += 15;
+      if (
+        /^\/tickets\/?$/.test(
+          path
+        )
+      ) {
+        score += 60;
+      } else if (
+        customerInPath &&
+        /ticket/.test(
+          path
+        )
+      ) {
+        score += 45;
+      } else {
+        return -Infinity;
+      }
+
+      if (
+        /tickets?/.test(
+          text
+        )
+      ) {
+        score += 20;
+      }
+
+      if (
+        /tickets?/.test(
+          context
+        )
+      ) {
+        score += 25;
+      }
+
+      /*
+       * Strongly favor customer-specific ticket links over a
+       * generic /tickets navigation link.
+       */
+      if (
+        !customerInPath &&
+        !customerInQuery
+      ) {
+        score -= 80;
+      }
+    }
+
+    // ----------------------------------------------------------
+    // Assets
+    // ----------------------------------------------------------
+
+    if (
+      kind ===
+      'assets'
+    ) {
+      if (
+        /^\/customer_assets\/?$/.test(
+          path
+        )
+      ) {
+        score += 55;
+      } else if (
+        customerInPath &&
+        /asset/.test(
+          path
+        )
+      ) {
+        score += 40;
+      } else {
+        return -Infinity;
+      }
+
+      if (
+        /assets?/.test(
+          text
+        )
+      ) {
+        score += 15;
+      }
+
+      if (
+        /assets?/.test(
+          context
+        )
+      ) {
+        score += 20;
+      }
+
+      if (
+        !customerInPath &&
+        !customerInQuery
+      ) {
+        score -= 60;
+      }
     }
 
     return score;
   }
 
-  function findNativeAssetLink(
+  function findNativeLink(
     doc,
+    kind,
     customerId
   ) {
     const candidates =
@@ -436,8 +517,9 @@
               ),
 
             score:
-              scoreAssetLink(
+              scoreNativeLink(
                 anchor,
+                kind,
                 customerId
               )
           })
@@ -460,45 +542,19 @@
     );
   }
 
-  function ensureCustomerFilter(
-    urlValue,
-    customerId
-  ) {
-    const url =
-      new URL(
-        urlValue,
-        location.origin
-      );
-
-    const hasCustomerFilter =
-      Array.from(
-        url.searchParams.keys()
-      ).some(
-        (key) =>
-          /customer.*id|organization.*id/i.test(
-            key
-          )
-      );
-
-    const hasCustomerInPath =
-      new RegExp(
-        `/customers/${customerId}(?:/|$)`,
-        'i'
-      ).test(
-        url.pathname
-      );
-
-    if (
-      !hasCustomerFilter &&
-      !hasCustomerInPath
-    ) {
-      url.searchParams.set(
-        'customer_id',
-        customerId
-      );
+  function absoluteUrl(value) {
+    if (!value) {
+      return '';
     }
 
-    return url.href;
+    try {
+      return new URL(
+        value,
+        location.origin
+      ).href;
+    } catch {
+      return '';
+    }
   }
 
   async function discoverCustomerLinks(
@@ -514,8 +570,8 @@
       );
     }
 
-    const baseLinks =
-      buildBaseLinks(
+    const fallback =
+      buildFallbackLinks(
         customer
       );
 
@@ -552,29 +608,57 @@
                   'text/html'
                 );
 
-            const nativeAssets =
-              findNativeAssetLink(
+            /*
+             * Find Syncro's actual customer-specific "View All"
+             * links from the customer page.
+             *
+             * We intentionally do NOT alter the ticket URL.
+             */
+            const nativeTickets =
+              findNativeLink(
                 doc,
+                'tickets',
                 customer.id
+              );
+
+            const nativeAssets =
+              findNativeLink(
+                doc,
+                'assets',
+                customer.id
+              );
+
+            const ticketUrl =
+              absoluteUrl(
+                nativeTickets
+              );
+
+            const assetUrl =
+              absoluteUrl(
+                nativeAssets
               );
 
             return {
               customer:
-                baseLinks.customer,
+                fallback.customer,
 
+              /*
+               * Leave Syncro's native customer-specific ticket URL
+               * completely untouched.
+               */
               tickets:
-                baseLinks.tickets,
+                ticketUrl ||
+                fallback.tickets,
 
               assets:
-                nativeAssets
-                  ? ensureCustomerFilter(
-                      nativeAssets,
-                      customer.id
-                    )
-                  : baseLinks.assets,
+                assetUrl ||
+                fallback.assets,
 
+              /*
+               * Use the known-good End Users tab format directly.
+               */
               contacts:
-                baseLinks.contacts
+                fallback.contacts
             };
           }
         )
@@ -583,11 +667,11 @@
             error
           ) => {
             console.debug(
-              '[TNS Customer Quick Links] Customer page discovery failed; using direct links.',
+              '[TNS Customer Quick Links] Native customer link discovery failed; using fallback links.',
               error
             );
 
-            return baseLinks;
+            return fallback;
           }
         );
 
@@ -600,7 +684,7 @@
   }
 
   // ------------------------------------------------------------
-  // Styling
+  // Styles
   // ------------------------------------------------------------
 
   function ensureStyles() {
@@ -725,7 +809,7 @@
   }
 
   // ------------------------------------------------------------
-  // Dropdown
+  // Create dropdown
   // ------------------------------------------------------------
 
   function createMenu(
@@ -755,14 +839,17 @@
         'customer',
         'Customer Page'
       ],
+
       [
         'tickets',
         'All Tickets'
       ],
+
       [
         'assets',
         'Assets'
       ],
+
       [
         'contacts',
         'End Users'
@@ -783,7 +870,7 @@
           links[key];
 
         /*
-         * Always preserve the original ticket page.
+         * Always preserve the current ticket page.
          */
         anchor.target =
           '_blank';
@@ -853,6 +940,10 @@
       }
     );
   }
+
+  // ------------------------------------------------------------
+  // Dropdown open/close behavior
+  // ------------------------------------------------------------
 
   function closeMenu() {
     const widget =
@@ -974,7 +1065,7 @@
   }
 
   // ------------------------------------------------------------
-  // Widget
+  // Create widget
   // ------------------------------------------------------------
 
   function createWidget(
@@ -982,7 +1073,7 @@
   ) {
     const menu =
       createMenu(
-        buildBaseLinks(
+        buildFallbackLinks(
           customer
         )
       );
@@ -1105,6 +1196,10 @@
         event.preventDefault();
         event.stopPropagation();
 
+        /*
+         * Begin fetching Syncro's native customer-specific
+         * links as soon as the dropdown is opened.
+         */
         startDiscovery();
 
         toggleMenu(
@@ -1114,6 +1209,10 @@
       }
     );
 
+    /*
+     * Start early when possible so the native links are
+     * normally ready before the user clicks an item.
+     */
     button.addEventListener(
       'mouseenter',
       startDiscovery,
@@ -1189,7 +1288,7 @@
   }
 
   // ------------------------------------------------------------
-  // Close behavior
+  // Close dropdown
   // ------------------------------------------------------------
 
   document.addEventListener(
@@ -1246,7 +1345,7 @@
   );
 
   // ------------------------------------------------------------
-  // Initial mount and Syncro rerender protection
+  // Initial mount + Syncro rerender protection
   // ------------------------------------------------------------
 
   mount();
