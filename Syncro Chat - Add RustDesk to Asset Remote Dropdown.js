@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Chat - Add RustDesk to Asset Remote Dropdown
 // @namespace    https://texomans.com/
-// @version      1.0.4
+// @version      1.0.5
 // @description  Adds RustDesk to the asset Remote Access dropdown on Syncro chat pages and automatically closes the temporary launch tab.
 // @match        https://*.syncromsp.com/chat
 // @match        https://*.syncromsp.com/chat/*
@@ -15,7 +15,7 @@
   'use strict';
 
   const RUSTDESK_ITEM_ATTR = 'data-tns-rustdesk-chat-menu-item';
-  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 4000;
+  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 3000;
 
   const rustDeskLinkCache = new Map();
 
