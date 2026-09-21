@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Tickets - Add RustDesk to Attached Asset Dropdown
 // @namespace    https://texomans.com/
-// @version      1.0.4
+// @version      1.0.5
 // @description  Adds RustDesk to attached asset remote-access dropdowns on Syncro ticket pages and automatically closes the temporary RustDesk launch tab.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Add%20RustDesk%20to%20Attached%20Asset%20Dropdown.js
@@ -19,7 +19,7 @@
   const ASSET_LINK_SELECTOR =
     'a[href*="/customer_assets/"]';
 
-  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 4000;
+  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 3000;
 
   const assetLinkCache = new Map();
 
