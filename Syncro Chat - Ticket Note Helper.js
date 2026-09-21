@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Chat - Ticket Note Helper
 // @namespace    https://texomans.com/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Copies the selected Syncro Chat transcript or prepares it for ChatGPT to summarize as Issue / Details / Actions / Status ticket notes.
 // @match        https://*.syncromsp.com/chat
 // @match        https://*.syncromsp.com/chat/*
@@ -1035,34 +1035,51 @@
     }
 
     function buildSummaryPrompt(
-        result
-    ) {
-        const transcript =
-            buildTranscriptDocument(
-                result
-            );
+    result
+) {
+    const transcript =
+        buildTranscriptDocument(
+            result
+        );
 
-        return `I need a concise internal ticket note from this Syncro live-chat conversation.
+    return `I need a concise internal ticket note from this Syncro live-chat conversation.
 
-Return ONLY the note, using exactly these four headings:
+First, determine whether there is enough information to create an accurate ticket note.
+
+IMPORTANT FOLLOW-UP RULES:
+
+- If the conversation appears to have concluded, but the resolution or solution is not clearly stated, DO NOT guess the resolution.
+- Instead, ask me:
+  "What was the resolution/solution for this chat?"
+- If the conversation appears to have concluded but it is also unclear what the original issue or request was, ask me:
+  "What was this chat regarding, and what was the resolution/solution?"
+- If the conversation is clearly still ongoing, unresolved, awaiting information, or awaiting customer confirmation, do not ask for a resolution. Document the current status instead.
+- Ask only for information that is genuinely missing.
+- Do not manufacture missing context from assumptions.
+
+If enough information exists to create the note, return ONLY the note using exactly these four headings:
 
 Issue:
 Details:
 Actions:
 Status:
 
-Rules:
-- Use only facts explicitly present in the transcript. Do not invent, infer, or assume troubleshooting steps, causes, resolutions, names, devices, or outcomes.
+Rules for the completed ticket note:
+
+- Use only facts explicitly present in the transcript or facts I provide in response to a follow-up question.
+- Do not invent, infer, or assume troubleshooting steps, causes, resolutions, names, devices, or outcomes.
 - Keep the note concise but preserve details that would matter to another technician.
 - Issue: state the user's reported problem or request.
 - Details: include relevant symptoms, context, errors, affected device/user, timing, and clarifications.
-- Actions: include only troubleshooting or changes that were actually performed or explicitly instructed during the chat. Use bullets when there is more than one action.
-- Status: state the actual ending state of the chat, such as resolved, unresolved, awaiting user confirmation, follow-up required, escalated, or unknown. If the transcript does not establish the status, write "Not stated in chat."
+- Actions: include only troubleshooting, investigation, changes, instructions, or solutions that were actually performed or explicitly discussed.
+- Use bullets under Actions when there is more than one action.
+- Status: state the actual ending state of the chat, such as resolved, unresolved, awaiting user confirmation, follow-up required, escalated, or unknown.
+- Do not claim the issue was resolved unless the transcript or my follow-up response clearly establishes that it was.
+- If the chat clearly ended successfully but the exact solution is missing, ask me for the resolution instead of writing "Not stated in chat."
 - Do not include greetings, filler, a preface, a conclusion, or a markdown table.
-- Do not claim the issue was resolved unless the transcript clearly shows that it was.
 
 ${transcript}`;
-    }
+}
 
     function copyText(text) {
         GM_setClipboard(
