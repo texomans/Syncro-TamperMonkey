@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Assets - Online Filter and Select
 // @namespace    https://texomans.com/
-// @version      1.0.1
-// @description  Shows online asset counts and adds Online Only and Select Online controls to the Syncro Assets page.
+// @version      1.0.3
+// @description  Shows online asset counts and adds Online Only/Show All plus Select/Deselect Online controls to the Syncro Assets page.
 // @match        https://*.syncromsp.com/customer_assets*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Online%20Filter%20and%20Select.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Online%20Filter%20and%20Select.js
@@ -212,10 +212,6 @@
             )
         ];
 
-        /*
-         * Check offline first so labels such as "Last Online"
-         * don't accidentally make an offline asset look online.
-         */
         for (const element of elements) {
             if (elementIndicatesOffline(element)) {
                 return false;
@@ -232,14 +228,10 @@
     }
 
     function isAssetOnline(row) {
+        const table = getAssetsTable();
         const statusColumnIndex =
-            getStatusColumnIndex(
-                getAssetsTable()
-            );
+            getStatusColumnIndex(table);
 
-        /*
-         * Prefer the actual Status column when Syncro exposes one.
-         */
         if (statusColumnIndex >= 0) {
             const cells =
                 row.querySelectorAll('td');
@@ -257,9 +249,10 @@
                     return result;
                 }
 
-                const text = normalizeText(
-                    statusCell.textContent
-                );
+                const text =
+                    normalizeText(
+                        statusCell.textContent
+                    );
 
                 if (text === 'offline') {
                     return false;
@@ -271,10 +264,6 @@
             }
         }
 
-        /*
-         * Then inspect the row for explicit online/offline
-         * attributes or status icons.
-         */
         const rowResult =
             inspectElementForStatus(row);
 
@@ -282,9 +271,6 @@
             return rowResult;
         }
 
-        /*
-         * Conservative text fallback.
-         */
         const possibleLabels =
             row.querySelectorAll(
                 'span, small, strong, div, i'
@@ -310,9 +296,6 @@
             }
         }
 
-        /*
-         * Unknown = offline for selection purposes.
-         */
         return false;
     }
 
@@ -330,6 +313,40 @@
         );
     }
 
+    function getOnlineRows() {
+        return getAssetRows().filter(
+            isAssetOnline
+        );
+    }
+
+    function getOnlineSelectionState() {
+        const onlineRows =
+            getOnlineRows();
+
+        if (!onlineRows.length) {
+            return {
+                total: 0,
+                selected: 0,
+                allSelected: false
+            };
+        }
+
+        const selected =
+            onlineRows.filter(row => {
+                const checkbox =
+                    getAssetCheckbox(row);
+
+                return !!checkbox?.checked;
+            }).length;
+
+        return {
+            total: onlineRows.length,
+            selected,
+            allSelected:
+                selected === onlineRows.length
+        };
+    }
+
     function setCheckboxState(
         checkbox,
         checked
@@ -343,46 +360,45 @@
         }
 
         /*
-         * Click the real checkbox so Syncro's own bulk-selection
-         * JavaScript knows the state changed.
+         * Use Syncro's real checkbox click handler so its native
+         * bulk-action system knows about the selection change.
          */
         checkbox.click();
     }
 
-    function selectOnlineAssets() {
-        const rows = getAssetRows();
+    function toggleOnlineSelection(event) {
+        event?.preventDefault();
+        event?.stopPropagation();
 
-        rows.forEach(row => {
-            /*
-             * Ignore assets hidden by Syncro itself.
-             *
-             * When Online Only is enabled, online assets remain visible,
-             * so they still qualify here.
-             */
-            if (
-                !row.classList.contains(
-                    FILTER_HIDDEN_CLASS
-                ) &&
-                (
-                    row.getClientRects().length === 0 ||
-                    window.getComputedStyle(row).display === 'none'
-                )
-            ) {
-                return;
-            }
+        const state =
+            getOnlineSelectionState();
 
+        if (!state.total) {
+            return;
+        }
+
+        /*
+         * If all online assets are currently selected,
+         * deselect them.
+         *
+         * Otherwise select all online assets.
+         *
+         * Offline asset selections are deliberately left alone.
+         */
+        const shouldSelect =
+            !state.allSelected;
+
+        getOnlineRows().forEach(row => {
             const checkbox =
                 getAssetCheckbox(row);
 
-            if (!checkbox) {
-                return;
-            }
-
             setCheckboxState(
                 checkbox,
-                isAssetOnline(row)
+                shouldSelect
             );
         });
+
+        updateSelectionButton();
     }
 
     function applyOnlineFilter() {
@@ -400,6 +416,18 @@
         });
     }
 
+    function toggleOnlineOnly(event) {
+        event?.preventDefault();
+        event?.stopPropagation();
+
+        onlineOnlyEnabled =
+            !onlineOnlyEnabled;
+
+        applyOnlineFilter();
+        updateFilterButton();
+        updateCounter();
+    }
+
     function updateCounter() {
         const counter =
             document.querySelector(
@@ -410,9 +438,8 @@
             return;
         }
 
-        const rows = getAssetRows();
-
-        const total = rows.length;
+        const rows =
+            getAssetRows();
 
         const online =
             rows.filter(
@@ -420,19 +447,18 @@
             ).length;
 
         const newText =
-            `🟢 ${online} Online / ${total} Total`;
+            `🟢 ${online} Online / ${rows.length} Total`;
 
-        /*
-         * Important:
-         * Don't replace the text node unless the value actually changed.
-         * Replacing it unnecessarily triggers MutationObserver.
-         */
-        if (counter.textContent !== newText) {
-            counter.textContent = newText;
+        if (
+            counter.textContent !==
+            newText
+        ) {
+            counter.textContent =
+                newText;
         }
     }
 
-    function updateOnlineOnlyButton() {
+    function updateFilterButton() {
         const button =
             document.querySelector(
                 `#${TOOLBAR_ID} [data-tns-online-only]`
@@ -442,15 +468,35 @@
             return;
         }
 
-        button.classList.toggle(
-            'btn-success',
-            onlineOnlyEnabled
-        );
+        if (onlineOnlyEnabled) {
+            button.textContent =
+                'Show All';
 
-        button.classList.toggle(
-            'btn-default',
-            !onlineOnlyEnabled
-        );
+            button.classList.remove(
+                'btn-default'
+            );
+
+            button.classList.add(
+                'btn-success'
+            );
+
+            button.title =
+                'Show all assets';
+        } else {
+            button.textContent =
+                'Online Only';
+
+            button.classList.remove(
+                'btn-success'
+            );
+
+            button.classList.add(
+                'btn-default'
+            );
+
+            button.title =
+                'Show only online assets';
+        }
 
         button.setAttribute(
             'aria-pressed',
@@ -458,39 +504,53 @@
                 ? 'true'
                 : 'false'
         );
-
-        const newText =
-            onlineOnlyEnabled
-                ? '✓ Online Only'
-                : 'Online Only';
-
-        if (button.textContent !== newText) {
-            button.textContent = newText;
-        }
     }
 
-    function toggleOnlineOnly(event) {
-        if (event) {
-            event.preventDefault();
-            event.stopPropagation();
+    function updateSelectionButton() {
+        const button =
+            document.querySelector(
+                `#${TOOLBAR_ID} [data-tns-select-online]`
+            );
+
+        if (!button) {
+            return;
         }
 
-        onlineOnlyEnabled =
-            !onlineOnlyEnabled;
+        const state =
+            getOnlineSelectionState();
 
-        applyOnlineFilter();
-        updateOnlineOnlyButton();
-        updateCounter();
-    }
+        button.disabled =
+            state.total === 0;
 
-    function handleSelectOnline(event) {
-        if (event) {
-            event.preventDefault();
-            event.stopPropagation();
+        if (state.allSelected) {
+            button.textContent =
+                'Deselect Online';
+
+            button.classList.remove(
+                'btn-default'
+            );
+
+            button.classList.add(
+                'btn-warning'
+            );
+
+            button.title =
+                'Deselect all online assets';
+        } else {
+            button.textContent =
+                'Select Online';
+
+            button.classList.remove(
+                'btn-warning'
+            );
+
+            button.classList.add(
+                'btn-default'
+            );
+
+            button.title =
+                'Select all online assets';
         }
-
-        selectOnlineAssets();
-        updateCounter();
     }
 
     function addStyles() {
@@ -507,7 +567,8 @@
                 'style'
             );
 
-        style.id = STYLE_ID;
+        style.id =
+            STYLE_ID;
 
         style.textContent = `
             .${FILTER_HIDDEN_CLASS} {
@@ -540,27 +601,6 @@
         );
     }
 
-    function findToolbarInsertionPoint(
-        table
-    ) {
-        const wrapper =
-            table.closest(
-                '.dataTables_wrapper, [data-testid="assets-table-wrapper"]'
-            );
-
-        if (wrapper) {
-            return {
-                parent: wrapper,
-                before: table
-            };
-        }
-
-        return {
-            parent: table.parentElement,
-            before: table
-        };
-    }
-
     function createToolbar() {
         if (
             document.getElementById(
@@ -577,21 +617,13 @@
             return;
         }
 
-        const insertion =
-            findToolbarInsertionPoint(
-                table
-            );
-
-        if (!insertion?.parent) {
-            return;
-        }
-
         const toolbar =
             document.createElement(
                 'div'
             );
 
-        toolbar.id = TOOLBAR_ID;
+        toolbar.id =
+            TOOLBAR_ID;
 
         toolbar.innerHTML = `
             <span
@@ -607,7 +639,6 @@
                     class="btn btn-default btn-sm"
                     data-tns-online-only
                     aria-pressed="false"
-                    title="Show only online assets"
                 >
                     Online Only
                 </button>
@@ -616,7 +647,6 @@
                     type="button"
                     class="btn btn-default btn-sm"
                     data-tns-select-online
-                    title="Select currently online assets"
                 >
                     Select Online
                 </button>
@@ -638,13 +668,25 @@
             )
             .addEventListener(
                 'click',
-                handleSelectOnline
+                toggleOnlineSelection
             );
 
-        insertion.parent.insertBefore(
-            toolbar,
-            insertion.before
-        );
+        const wrapper =
+            table.closest(
+                '.dataTables_wrapper, [data-testid="assets-table-wrapper"]'
+            );
+
+        if (wrapper) {
+            wrapper.insertBefore(
+                toolbar,
+                table
+            );
+        } else {
+            table.parentElement?.insertBefore(
+                toolbar,
+                table
+            );
+        }
     }
 
     function update() {
@@ -654,9 +696,11 @@
 
         addStyles();
         createToolbar();
+
         applyOnlineFilter();
-        updateOnlineOnlyButton();
         updateCounter();
+        updateFilterButton();
+        updateSelectionButton();
     }
 
     function scheduleUpdate() {
@@ -690,19 +734,21 @@
             return true;
         }
 
+        if (
+            target instanceof Text &&
+            target.parentElement?.closest(
+                `#${TOOLBAR_ID}`
+            )
+        ) {
+            return true;
+        }
+
         return false;
     }
 
     const observer =
         new MutationObserver(
             mutations => {
-                /*
-                 * This is the v1.0.1 fix:
-                 *
-                 * Ignore mutations caused exclusively by our own toolbar.
-                 * Otherwise changing button text or counter text can cause
-                 * an endless observer/update loop.
-                 */
                 const realSyncroChange =
                     mutations.some(
                         mutation =>
@@ -716,6 +762,37 @@
                 }
             }
         );
+
+    /*
+     * Keep Select/Deselect Online synchronized if the user manually
+     * changes asset checkboxes or uses Syncro's own selection controls.
+     */
+    document.addEventListener(
+        'change',
+        event => {
+            const target =
+                event.target;
+
+            if (
+                target instanceof HTMLInputElement &&
+                target.type === 'checkbox' &&
+                (
+                    target.classList.contains(
+                        'selectedId'
+                    ) ||
+                    target.closest(
+                        'table[data-testid="assets-table"]'
+                    )
+                )
+            ) {
+                window.setTimeout(
+                    updateSelectionButton,
+                    0
+                );
+            }
+        },
+        true
+    );
 
     scheduleUpdate();
 
