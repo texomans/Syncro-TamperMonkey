@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Assets - Online Filter and Select
 // @namespace    https://texomans.com/
-// @version      1.0.6
-// @description  Adds Online Only/Show All and Select/Deselect Online controls to the Syncro Assets page.
+// @version      1.0.7
+// @description  Shows online asset counts and adds Online Only/Show All and Select/Deselect Online controls to Syncro Assets.
 // @match        https://*.syncromsp.com/customer_assets*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Online%20Filter%20and%20Select.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Online%20Filter%20and%20Select.js
@@ -14,7 +14,7 @@
     'use strict';
 
     const INSTANCE_KEY =
-        '__TNS_SYNCRO_ONLINE_FILTER_106__';
+        '__TNS_SYNCRO_ASSETS_ONLINE_FILTER_107__';
 
     if (window[INSTANCE_KEY]) {
         return;
@@ -28,11 +28,14 @@
     const STYLE_ID =
         'tns-online-assets-style';
 
+    const HIDDEN_CLASS =
+        'tns-online-assets-hidden';
+
     let onlineOnlyEnabled = false;
 
     /*
      * ------------------------------------------------------------
-     * Basic Syncro table helpers
+     * Syncro table helpers
      * ------------------------------------------------------------
      */
 
@@ -54,620 +57,103 @@
             table.querySelectorAll(
                 'tbody tr[data-testid^="asset-row-"], tbody tr'
             )
-        ).filter(row => {
-            return !!getAssetCheckbox(row);
-        });
+        ).filter(row =>
+            !!row.querySelector(
+                'input.selectedId'
+            )
+        );
     }
 
     function getAssetCheckbox(row) {
-        return (
-            row.querySelector(
-                'input.selectedId[type="checkbox"]'
-            ) ||
-            row.querySelector(
-                'input.selectedId'
-            ) ||
-            row.querySelector(
-                'input[type="checkbox"][value]'
-            )
-        );
-    }
-
-    function normalize(value) {
-        return (value || '')
-            .toString()
-            .replace(/\s+/g, ' ')
-            .trim()
-            .toLowerCase();
-    }
-
-    /*
-     * ------------------------------------------------------------
-     * Find the actual Asset Name cell
-     * ------------------------------------------------------------
-     */
-
-    function getAssetLink(row) {
-        const links =
-            row.querySelectorAll(
-                'a[href*="/customer_assets/"]'
-            );
-
-        for (const link of links) {
-            try {
-                const url =
-                    new URL(
-                        link.href,
-                        window.location.origin
-                    );
-
-                if (
-                    /^\/customer_assets\/\d+\/?$/.test(
-                        url.pathname
-                    )
-                ) {
-                    return link;
-                }
-            } catch {
-                // Ignore malformed links.
-            }
-        }
-
-        return null;
-    }
-
-    function getAssetNameCell(row) {
-        const link =
-            getAssetLink(row);
-
-        if (!link) {
-            return null;
-        }
-
-        return (
-            link.closest('td') ||
-            link.parentElement
+        return row.querySelector(
+            'input.selectedId'
         );
     }
 
     /*
      * ------------------------------------------------------------
-     * Color detection
+     * Exact Syncro Online/Offline detection
      * ------------------------------------------------------------
-     */
-
-    function parseRgb(color) {
-        if (!color) {
-            return null;
-        }
-
-        const match =
-            color.match(
-                /rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/
-            );
-
-        if (!match) {
-            return null;
-        }
-
-        return {
-            r: Number(match[1]),
-            g: Number(match[2]),
-            b: Number(match[3])
-        };
-    }
-
-    function isGreenColor(color) {
-        const rgb =
-            parseRgb(color);
-
-        if (!rgb) {
-            return false;
-        }
-
-        return (
-            rgb.g >= 80 &&
-            rgb.g > rgb.r * 1.20 &&
-            rgb.g > rgb.b * 1.10
-        );
-    }
-
-    /*
-     * ------------------------------------------------------------
-     * Explicit Online / Offline attributes
-     * ------------------------------------------------------------
-     */
-
-    function getStatusStrings(element) {
-        if (!element) {
-            return [];
-        }
-
-        return [
-            element.getAttribute('title'),
-            element.getAttribute('aria-label'),
-            element.getAttribute(
-                'data-original-title'
-            ),
-            element.getAttribute(
-                'data-status'
-            ),
-            element.getAttribute(
-                'data-state'
-            ),
-            element.getAttribute(
-                'data-online'
-            ),
-            element.getAttribute(
-                'data-testid'
-            )
-        ]
-            .filter(Boolean)
-            .map(normalize);
-    }
-
-    function explicitStatus(element) {
-        const values =
-            getStatusStrings(element);
-
-        for (const value of values) {
-            if (
-                value === 'online' ||
-                value === 'true' ||
-                value === 'asset online' ||
-                value === 'agent online' ||
-                value.includes(
-                    'currently online'
-                )
-            ) {
-                return true;
-            }
-
-            if (
-                value === 'offline' ||
-                value === 'false' ||
-                value === 'asset offline' ||
-                value === 'agent offline' ||
-                value.includes(
-                    'currently offline'
-                )
-            ) {
-                return false;
-            }
-        }
-
-        return null;
-    }
-
-    /*
-     * ------------------------------------------------------------
-     * React/data-props detection
      *
-     * Syncro uses data-react-props/data-props elsewhere on this page.
-     * If the online state exists there, use it.
+     * Syncro renders asset status as:
+     *
+     * <span
+     *   data-sidepack-react-class="legacy/asset/AssetStatus"
+     * >
+     *     <span class="tooltipper"
+     *           data-original-title="Online">
+     *         ...
+     *     </span>
+     * </span>
+     *
+     * Offline uses:
+     *
+     * data-original-title="Offline – Last Synced: ..."
+     *
+     * We use that exact status component.
      * ------------------------------------------------------------
      */
 
-    function searchObjectForOnlineState(
-        object,
-        depth = 0
-    ) {
-        if (
-            !object ||
-            typeof object !== 'object' ||
-            depth > 8
-        ) {
-            return null;
-        }
-
-        for (
-            const [rawKey, value]
-            of Object.entries(object)
-        ) {
-            const key =
-                normalize(rawKey)
-                    .replace(
-                        /[^a-z0-9]/g,
-                        ''
-                    );
-
-            /*
-             * Ignore timestamps/labels such as:
-             *
-             * last_online
-             * last_online_at
-             * online_since
-             */
-            const irrelevant =
-                key.includes('lastonline') ||
-                key.includes('onlinesince') ||
-                key.includes('onlinetime') ||
-                key.includes('onlinedate');
-
-            if (!irrelevant) {
-                if (
-                    key === 'online' ||
-                    key === 'isonline' ||
-                    key === 'agentonline' ||
-                    key === 'assetonline' ||
-                    key === 'deviceonline'
-                ) {
-                    if (
-                        typeof value ===
-                        'boolean'
-                    ) {
-                        return value;
-                    }
-
-                    const text =
-                        normalize(value);
-
-                    if (
-                        text === 'true' ||
-                        text === 'online'
-                    ) {
-                        return true;
-                    }
-
-                    if (
-                        text === 'false' ||
-                        text === 'offline'
-                    ) {
-                        return false;
-                    }
-                }
-
-                if (
-                    key === 'status' ||
-                    key === 'presence' ||
-                    key === 'presencestatus' ||
-                    key === 'connectionstatus'
-                ) {
-                    const text =
-                        normalize(value);
-
-                    if (text === 'online') {
-                        return true;
-                    }
-
-                    if (text === 'offline') {
-                        return false;
-                    }
-                }
-            }
-
-            if (
-                value &&
-                typeof value === 'object'
-            ) {
-                const found =
-                    searchObjectForOnlineState(
-                        value,
-                        depth + 1
-                    );
-
-                if (found !== null) {
-                    return found;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    function getOnlineStateFromProps(row) {
-        const nodes =
-            row.querySelectorAll(
-                '[data-react-props], [data-props]'
+    function getAssetStatus(row) {
+        const statusComponent =
+            row.querySelector(
+                '[data-sidepack-react-class="legacy/asset/AssetStatus"]'
             );
 
-        for (const node of nodes) {
-            const raw =
-                node.getAttribute(
-                    'data-react-props'
-                ) ||
-                node.getAttribute(
-                    'data-props'
-                );
-
-            if (!raw) {
-                continue;
-            }
-
-            try {
-                const props =
-                    JSON.parse(raw);
-
-                const result =
-                    searchObjectForOnlineState(
-                        props
-                    );
-
-                if (result !== null) {
-                    return result;
-                }
-            } catch {
-                // Ignore malformed JSON.
-            }
+        if (!statusComponent) {
+            return 'unknown';
         }
 
-        return null;
-    }
+        const tooltip =
+            statusComponent.querySelector(
+                '.tooltipper[data-original-title]'
+            );
 
-    /*
-     * ------------------------------------------------------------
-     * Syncro's visible green/empty status dot
-     * ------------------------------------------------------------
-     */
-
-    function inspectStatusDot(cell) {
-        if (!cell) {
-            return null;
+        if (!tooltip) {
+            return 'unknown';
         }
 
-        const candidates = [
-            ...cell.querySelectorAll(
-                [
-                    'i',
-                    'svg',
-                    'span',
-                    '[title]',
-                    '[aria-label]',
-                    '[data-status]',
-                    '[data-online]'
-                ].join(',')
+        const statusText =
+            (
+                tooltip.getAttribute(
+                    'data-original-title'
+                ) || ''
             )
-        ];
+                .trim()
+                .toLowerCase();
 
-        /*
-         * First use explicit Online / Offline metadata if Syncro
-         * provided any.
-         */
-        for (const element of candidates) {
-            const status =
-                explicitStatus(element);
-
-            if (status !== null) {
-                return status;
-            }
+        if (
+            statusText === 'online' ||
+            statusText.startsWith(
+                'online '
+            )
+        ) {
+            return 'online';
         }
 
-        /*
-         * Font Awesome 4 style:
-         *
-         *   fa-circle    = filled
-         *   fa-circle-o  = empty
-         */
-        for (const element of candidates) {
-            const classes =
-                normalize(
-                    typeof element.className ===
-                        'string'
-                        ? element.className
-                        : element.getAttribute(
-                              'class'
-                          )
-                );
-
-            if (
-                classes.includes(
-                    'fa-circle-o'
-                )
-            ) {
-                return false;
-            }
+        if (
+            statusText === 'offline' ||
+            statusText.startsWith(
+                'offline '
+            ) ||
+            statusText.startsWith(
+                'offline –'
+            ) ||
+            statusText.startsWith(
+                'offline -'
+            )
+        ) {
+            return 'offline';
         }
 
-        /*
-         * Font Awesome 5/6 outline circle.
-         */
-        for (const element of candidates) {
-            const classes =
-                normalize(
-                    typeof element.className ===
-                        'string'
-                        ? element.className
-                        : element.getAttribute(
-                              'class'
-                          )
-                );
-
-            if (
-                classes.includes(
-                    'fa-circle'
-                ) &&
-                (
-                    classes.includes(
-                        'far '
-                    ) ||
-                    classes.includes(
-                        'fa-regular'
-                    )
-                )
-            ) {
-                return false;
-            }
-        }
-
-        /*
-         * Filled Font Awesome circle.
-         */
-        for (const element of candidates) {
-            const classes =
-                normalize(
-                    typeof element.className ===
-                        'string'
-                        ? element.className
-                        : element.getAttribute(
-                              'class'
-                          )
-                );
-
-            if (
-                classes.includes(
-                    'fa-circle'
-                ) &&
-                !classes.includes(
-                    'fa-circle-o'
-                )
-            ) {
-                const style =
-                    window.getComputedStyle(
-                        element
-                    );
-
-                if (
-                    classes.includes(
-                        'text-success'
-                    ) ||
-                    isGreenColor(
-                        style.color
-                    ) ||
-                    isGreenColor(
-                        style.fill
-                    )
-                ) {
-                    return true;
-                }
-            }
-        }
-
-        /*
-         * SVG Font Awesome circle.
-         */
-        for (const element of candidates) {
-            const iconName =
-                normalize(
-                    element.getAttribute(
-                        'data-icon'
-                    )
-                );
-
-            if (
-                iconName === 'circle'
-            ) {
-                const style =
-                    window.getComputedStyle(
-                        element
-                    );
-
-                if (
-                    isGreenColor(
-                        style.color
-                    ) ||
-                    isGreenColor(
-                        style.fill
-                    )
-                ) {
-                    return true;
-                }
-            }
-        }
-
-        /*
-         * Generic green circular dot.
-         *
-         * This catches Syncro changing icon libraries while still
-         * following their documented green-dot convention.
-         */
-        for (const element of candidates) {
-            const rect =
-                element.getBoundingClientRect();
-
-            if (
-                rect.width <= 0 ||
-                rect.height <= 0 ||
-                rect.width > 30 ||
-                rect.height > 30
-            ) {
-                continue;
-            }
-
-            const style =
-                window.getComputedStyle(
-                    element
-                );
-
-            const classes =
-                normalize(
-                    typeof element.className ===
-                        'string'
-                        ? element.className
-                        : element.getAttribute(
-                              'class'
-                          )
-                );
-
-            const text =
-                normalize(
-                    element.textContent
-                );
-
-            const looksCircular =
-                classes.includes('circle') ||
-                classes.includes('dot') ||
-                classes.includes('status') ||
-                text === '●' ||
-                text === '⬤' ||
-                text === '•';
-
-            if (!looksCircular) {
-                continue;
-            }
-
-            if (
-                isGreenColor(
-                    style.color
-                ) ||
-                isGreenColor(
-                    style.backgroundColor
-                ) ||
-                isGreenColor(
-                    style.fill
-                )
-            ) {
-                return true;
-            }
-        }
-
-        return null;
+        return 'unknown';
     }
-
-    /*
-     * ------------------------------------------------------------
-     * Final Online determination
-     * ------------------------------------------------------------
-     */
 
     function isAssetOnline(row) {
-        /*
-         * 1. Prefer explicit data already supplied by Syncro.
-         */
-        const propStatus =
-            getOnlineStateFromProps(row);
-
-        if (propStatus !== null) {
-            return propStatus;
-        }
-
-        /*
-         * 2. Look ONLY in the Asset Name cell for Syncro's
-         *    green/empty status dot.
-         */
-        const assetCell =
-            getAssetNameCell(row);
-
-        const dotStatus =
-            inspectStatusDot(assetCell);
-
-        if (dotStatus !== null) {
-            return dotStatus;
-        }
-
-        /*
-         * Unknown/non-RMM/manual asset.
-         */
-        return false;
+        return (
+            getAssetStatus(row) ===
+            'online'
+        );
     }
 
     function getOnlineRows() {
@@ -752,27 +238,11 @@
     }
 
     function showOnlineOnly() {
-        const rows =
-            getAssetRows();
-
-        rows.forEach(row => {
-            /*
-             * Remember Syncro's current inline display setting.
-             */
-            row.dataset.tnsOriginalDisplay =
-                row.style.display || '';
-
-            if (isAssetOnline(row)) {
-                /*
-                 * Leave online rows exactly as Syncro had them.
-                 */
-                row.style.display =
-                    row.dataset
-                        .tnsOriginalDisplay;
-            } else {
-                row.style.display =
-                    'none';
-            }
+        getAssetRows().forEach(row => {
+            row.classList.toggle(
+                HIDDEN_CLASS,
+                !isAssetOnline(row)
+            );
         });
 
         onlineOnlyEnabled = true;
@@ -782,19 +252,9 @@
 
     function showAllAssets() {
         getAssetRows().forEach(row => {
-            if (
-                Object.prototype.hasOwnProperty.call(
-                    row.dataset,
-                    'tnsOriginalDisplay'
-                )
-            ) {
-                row.style.display =
-                    row.dataset
-                        .tnsOriginalDisplay;
-
-                delete row.dataset
-                    .tnsOriginalDisplay;
-            }
+            row.classList.remove(
+                HIDDEN_CLASS
+            );
         });
 
         onlineOnlyEnabled = false;
@@ -811,8 +271,7 @@
             showAllAssets();
         } else {
             /*
-             * Refresh the count/status snapshot immediately
-             * before filtering.
+             * Take a fresh snapshot immediately before filtering.
              */
             updateCounter();
             showOnlineOnly();
@@ -825,7 +284,7 @@
      * ------------------------------------------------------------
      */
 
-    function getSelectionState() {
+    function getOnlineSelectionState() {
         const rows =
             getOnlineRows();
 
@@ -839,7 +298,7 @@
 
         return {
             total: rows.length,
-            selected,
+            selected: selected,
             allSelected:
                 rows.length > 0 &&
                 selected === rows.length
@@ -857,7 +316,7 @@
         }
 
         const state =
-            getSelectionState();
+            getOnlineSelectionState();
 
         button.disabled =
             state.total === 0;
@@ -906,8 +365,8 @@
         }
 
         /*
-         * Use the real Syncro checkbox click so its native
-         * bulk-action system recognizes the selection.
+         * Use Syncro's actual checkbox click handler so its
+         * built-in bulk action controls update correctly.
          */
         checkbox.click();
     }
@@ -918,18 +377,28 @@
         event.stopImmediatePropagation();
 
         const state =
-            getSelectionState();
+            getOnlineSelectionState();
 
         if (!state.total) {
             return;
         }
 
+        /*
+         * If every online asset is selected:
+         *     deselect online assets.
+         *
+         * Otherwise:
+         *     select all online assets.
+         */
         const shouldSelect =
             !state.allSelected;
 
         getOnlineRows().forEach(row => {
+            const checkbox =
+                getAssetCheckbox(row);
+
             setCheckboxState(
-                getAssetCheckbox(row),
+                checkbox,
                 shouldSelect
             );
         });
@@ -939,7 +408,7 @@
 
     /*
      * ------------------------------------------------------------
-     * UI
+     * Styles
      * ------------------------------------------------------------
      */
 
@@ -961,6 +430,10 @@
             STYLE_ID;
 
         style.textContent = `
+            tr.${HIDDEN_CLASS} {
+                display: none !important;
+            }
+
             #${TOOLBAR_ID} {
                 display: flex;
                 align-items: center;
@@ -986,6 +459,12 @@
             style
         );
     }
+
+    /*
+     * ------------------------------------------------------------
+     * Toolbar
+     * ------------------------------------------------------------
+     */
 
     function createToolbar() {
         if (
@@ -1084,13 +563,17 @@
     /*
      * ------------------------------------------------------------
      * Initialization
+     * ------------------------------------------------------------
      *
-     * This retry only waits for Syncro to finish building the table.
-     * It stops completely once initialized.
+     * No MutationObserver.
+     * No recurring interval.
+     *
+     * We retry only until Syncro has finished rendering the
+     * asset rows, then initialization stops.
      * ------------------------------------------------------------
      */
 
-    let initializeAttempts = 0;
+    let attempts = 0;
 
     function initialize() {
         const table =
@@ -1099,18 +582,26 @@
         const rows =
             getAssetRows();
 
+        /*
+         * We also make sure Syncro has rendered at least one
+         * AssetStatus component before calculating the counter.
+         */
+        const statusRendered =
+            !!document.querySelector(
+                '[data-sidepack-react-class="legacy/asset/AssetStatus"]'
+            );
+
         if (
             !table ||
-            rows.length === 0
+            rows.length === 0 ||
+            !statusRendered
         ) {
-            initializeAttempts++;
+            attempts++;
 
-            if (
-                initializeAttempts < 30
-            ) {
+            if (attempts < 40) {
                 window.setTimeout(
                     initialize,
-                    500
+                    250
                 );
             }
 
@@ -1126,10 +617,10 @@
     }
 
     /*
-     * Update only the Select/Deselect label when Syncro
-     * checkboxes are manually changed.
+     * Keep Select/Deselect Online synchronized if you manually
+     * select/deselect assets using Syncro's checkboxes.
      *
-     * This does NOT affect Online Only.
+     * This listener DOES NOT touch the Online Only filter.
      */
     document.addEventListener(
         'change',
@@ -1138,10 +629,10 @@
                 event.target;
 
             if (
-                target instanceof
-                    HTMLInputElement &&
-                target.type ===
-                    'checkbox' &&
+                target instanceof HTMLInputElement &&
+                target.classList.contains(
+                    'selectedId'
+                ) &&
                 target.closest(
                     'table[data-testid="assets-table"]'
                 )
