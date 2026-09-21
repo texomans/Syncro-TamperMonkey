@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Tickets - Customer Quick Links
 // @namespace    https://texomans.com/
-// @version      1.0.0
-// @description  Adds a Customer quick-links dropdown to Syncro tickets for the customer page, open tickets, assets, and contacts.
+// @version      1.0.1
+// @description  Adds a Customer quick-links dropdown to Syncro tickets for the customer page, open tickets, assets, and contacts. Links open in new tabs.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Customer%20Quick%20Links.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Customer%20Quick%20Links.js
@@ -17,6 +17,7 @@
   const MENU_ID = 'tns-customer-quick-links-menu';
   const STYLE_ID = 'tns-customer-quick-links-style';
   const CUSTOMER_PATH_REGEX = /^\/customers\/(\d+)(?:\/.*)?\/?$/i;
+
   const customerPageCache = new Map();
 
   function cleanText(value) {
@@ -27,7 +28,9 @@
   }
 
   function isVisible(element) {
-    if (!element || !element.isConnected) return false;
+    if (!element || !element.isConnected) {
+      return false;
+    }
 
     const style = getComputedStyle(element);
     const rect = element.getBoundingClientRect();
@@ -42,19 +45,39 @@
   }
 
   function parseCustomerAnchor(anchor) {
-    if (!anchor?.href) return null;
+    if (!anchor?.href) {
+      return null;
+    }
 
     try {
-      const url = new URL(anchor.href, location.origin);
-      if (url.origin !== location.origin) return null;
+      const url = new URL(
+        anchor.href,
+        location.origin
+      );
 
-      const match = url.pathname.match(CUSTOMER_PATH_REGEX);
-      if (!match) return null;
+      if (
+        url.origin !==
+        location.origin
+      ) {
+        return null;
+      }
+
+      const match =
+        url.pathname.match(
+          CUSTOMER_PATH_REGEX
+        );
+
+      if (!match) {
+        return null;
+      }
 
       return {
         id: match[1],
         url,
-        exactPage: /^\/customers\/\d+\/?$/i.test(url.pathname)
+        exactPage:
+          /^\/customers\/\d+\/?$/i.test(
+            url.pathname
+          )
       };
     } catch {
       return null;
@@ -62,11 +85,27 @@
   }
 
   function scoreCustomerAnchor(anchor) {
-    const parsed = parseCustomerAnchor(anchor);
-    if (!parsed || !isVisible(anchor)) return -Infinity;
+    const parsed =
+      parseCustomerAnchor(
+        anchor
+      );
 
-    let score = parsed.exactPage ? 60 : 0;
-    const text = cleanText(anchor.textContent);
+    if (
+      !parsed ||
+      !isVisible(anchor)
+    ) {
+      return -Infinity;
+    }
+
+    let score =
+      parsed.exactPage
+        ? 60
+        : 0;
+
+    const text =
+      cleanText(
+        anchor.textContent
+      );
 
     if (
       anchor.closest(
@@ -76,19 +115,33 @@
       score += 20;
     }
 
-    const row = anchor.closest(
-      'tr, .form-group, .control-group, .row, [class*="customer"], [class*="organization"]'
-    );
+    const row =
+      anchor.closest(
+        'tr, .form-group, .control-group, .row, [class*="customer"], [class*="organization"]'
+      );
 
-    if (/customer|organization/i.test(cleanText(row?.textContent))) {
+    if (
+      /customer|organization/i.test(
+        cleanText(
+          row?.textContent
+        )
+      )
+    ) {
       score += 35;
     }
 
-    if (/^customers?$|^organizations?$/i.test(text)) {
+    if (
+      /^customers?$|^organizations?$/i.test(
+        text
+      )
+    ) {
       score -= 30;
     }
 
-    if (text && text.length <= 120) {
+    if (
+      text &&
+      text.length <= 120
+    ) {
       score += 5;
     }
 
@@ -96,33 +149,59 @@
   }
 
   function getCustomerInfo() {
-    const candidates = Array.from(
-      document.querySelectorAll('a[href*="/customers/"]')
-    )
-      .map((anchor) => ({
-        anchor,
-        parsed: parseCustomerAnchor(anchor),
-        score: scoreCustomerAnchor(anchor)
-      }))
-      .filter(
-        (item) =>
-          item.parsed &&
-          Number.isFinite(item.score)
+    const candidates =
+      Array.from(
+        document.querySelectorAll(
+          'a[href*="/customers/"]'
+        )
       )
-      .sort(
-        (a, b) =>
-          b.score - a.score
-      );
+        .map(
+          (anchor) => ({
+            anchor,
+            parsed:
+              parseCustomerAnchor(
+                anchor
+              ),
+            score:
+              scoreCustomerAnchor(
+                anchor
+              )
+          })
+        )
+        .filter(
+          (item) =>
+            item.parsed &&
+            Number.isFinite(
+              item.score
+            )
+        )
+        .sort(
+          (a, b) =>
+            b.score -
+            a.score
+        );
 
-    const best = candidates[0];
+    const best =
+      candidates[0];
 
-    if (!best) return null;
+    if (!best) {
+      return null;
+    }
 
     return {
-      id: best.parsed.id,
-      href: best.parsed.url.href,
-      name: cleanText(best.anchor.textContent),
-      anchor: best.anchor
+      id:
+        best.parsed.id,
+
+      href:
+        best.parsed.url.href,
+
+      name:
+        cleanText(
+          best.anchor.textContent
+        ),
+
+      anchor:
+        best.anchor
     };
   }
 
@@ -167,7 +246,9 @@
     return url;
   }
 
-  function buildFallbackLinks(customer) {
+  function buildFallbackLinks(
+    customer
+  ) {
     const openTickets =
       new URL(
         '/tickets',
@@ -207,10 +288,17 @@
     );
 
     return {
-      customer: customer.href,
-      tickets: openTickets.href,
-      assets: assets.href,
-      contacts: contacts.href
+      customer:
+        customer.href,
+
+      tickets:
+        openTickets.href,
+
+      assets:
+        assets.href,
+
+      contacts:
+        contacts.href
     };
   }
 
@@ -430,6 +518,7 @@
               anchor.getAttribute(
                 'href'
               ),
+
             score:
               scoreNativeLink(
                 anchor,
@@ -518,7 +607,9 @@
       fetch(
         customer.href,
         {
-          method: 'GET',
+          method:
+            'GET',
+
           credentials:
             'same-origin'
         }
@@ -790,6 +881,12 @@
         anchor.href =
           links[key];
 
+        anchor.target =
+          '_blank';
+
+        anchor.rel =
+          'noopener noreferrer';
+
         anchor.textContent =
           label;
 
@@ -842,6 +939,12 @@
         ) {
           anchor.href =
             href;
+
+          anchor.target =
+            '_blank';
+
+          anchor.rel =
+            'noopener noreferrer';
         }
       }
     );
