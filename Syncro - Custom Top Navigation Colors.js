@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         Syncro - Custom Top Navigation Colors
 // @namespace    https://texomans.com/
-// @version      1.1.1
+// @version      1.1.2
 // @description  Customize the colors of Syncro's main top navigation and secondary navigation bars.
 // @match        https://*.syncromsp.com/*
-// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/refs/heads/main/Syncro%20-%20Custom%20Top%20Navigation%20Colors.ps
-// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/refs/heads/main/Syncro%20-%20Custom%20Top%20Navigation%20Colors.ps
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/refs/heads/main/Syncro%20-%20Custom%20Top%20Navigation%20Colors.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/refs/heads/main/Syncro%20-%20Custom%20Top%20Navigation%20Colors.js
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
