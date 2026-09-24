@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - Custom Top Navigation Colors
 // @namespace    https://texomans.com/
-// @version      1.1.4
+// @version      1.1.5
 // @description  Customize the colors of Syncro's main top navigation and secondary navigation bars.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20Custom%20Top%20Navigation%20Colors.js
@@ -32,7 +32,6 @@
     // SETTINGS
     // ============================================================
 
-    // Syncro switches to its mobile navigation around this width.
     const MOBILE_BREAKPOINT = 767;
 
 
@@ -114,6 +113,221 @@
 
 
             /* ====================================================
+               MAIN SEARCH BOX
+               ==================================================== */
+
+            #top-nav-search-syn,
+            #top-nav-search-syn .searchbox {
+
+                background:
+                    transparent !important;
+
+                background-image:
+                    none !important;
+            }
+
+
+            #top-nav-search-syn .soulmate-search-input,
+            #customer_search .soulmate-search-input {
+
+                background: ${BOTTOM_BAR_COLOR} !important;
+                background-color: ${BOTTOM_BAR_COLOR} !important;
+                background-image: none !important;
+
+                border:
+                    1px solid ${DIVIDER_COLOR} !important;
+
+                box-shadow:
+                    none !important;
+            }
+
+
+            #top-nav-search-syn .soulmate-search-input:hover,
+            #top-nav-search-syn .soulmate-search-input:focus,
+            #customer_search .soulmate-search-input:hover,
+            #customer_search .soulmate-search-input:focus {
+
+                background: ${BOTTOM_BAR_COLOR} !important;
+                background-color: ${BOTTOM_BAR_COLOR} !important;
+
+                border-color:
+                    ${DIVIDER_COLOR} !important;
+
+                box-shadow:
+                    none !important;
+
+                outline:
+                    none !important;
+            }
+
+
+            /* ====================================================
+               SEARCH AUTOCOMPLETE PANEL
+               ==================================================== */
+
+            /*
+             * Soulmate dynamically generates the autocomplete
+             * results, so cover its known container classes.
+             */
+
+            #soulmate,
+            .soulmate,
+            .soulmate-results,
+            .soulmate-suggestions,
+            .soulmate-type-container,
+            .soulmate-type-suggestions {
+
+                background: ${TOP_BAR_COLOR} !important;
+                background-color: ${TOP_BAR_COLOR} !important;
+                background-image: none !important;
+
+                border-color:
+                    ${DIVIDER_COLOR} !important;
+
+                box-shadow:
+                    none !important;
+            }
+
+
+            /* ----------------------------------------------------
+               SEARCH CATEGORY COLUMN
+               Example: "Assets"
+               ---------------------------------------------------- */
+
+            #soulmate .soulmate-type,
+            #soulmate .soulmate-type-title,
+
+            .soulmate .soulmate-type,
+            .soulmate .soulmate-type-title,
+
+            .soulmate-type,
+            .soulmate-type-title {
+
+                background: ${BOTTOM_BAR_COLOR} !important;
+                background-color: ${BOTTOM_BAR_COLOR} !important;
+                background-image: none !important;
+
+                border-color:
+                    ${DIVIDER_COLOR} !important;
+            }
+
+
+            /* ----------------------------------------------------
+               SEARCH RESULT ROWS
+               ---------------------------------------------------- */
+
+            #soulmate .soulmate-suggestion,
+            .soulmate .soulmate-suggestion,
+            .soulmate-suggestion {
+
+                background: transparent !important;
+                background-color: transparent !important;
+                background-image: none !important;
+
+                border-color:
+                    ${DIVIDER_COLOR} !important;
+            }
+
+
+            /* ----------------------------------------------------
+               SEARCH RESULT HOVER / ACTIVE
+               ---------------------------------------------------- */
+
+            #soulmate .soulmate-suggestion:hover,
+            #soulmate .soulmate-suggestion:focus,
+            #soulmate .soulmate-suggestion.focus,
+            #soulmate .soulmate-suggestion.active,
+
+            .soulmate .soulmate-suggestion:hover,
+            .soulmate .soulmate-suggestion:focus,
+            .soulmate .soulmate-suggestion.focus,
+            .soulmate .soulmate-suggestion.active,
+
+            .soulmate-suggestion:hover,
+            .soulmate-suggestion:focus,
+            .soulmate-suggestion.focus,
+            .soulmate-suggestion.active {
+
+                background: ${BOTTOM_BAR_COLOR} !important;
+                background-color: ${BOTTOM_BAR_COLOR} !important;
+                background-image: none !important;
+            }
+
+
+            /* ====================================================
+               SYNCRO TOOLTIPS
+               ==================================================== */
+
+            /*
+             * Notifications
+             * Create new...
+             * See latest updates
+             * Help tooltips
+             * Other standard Syncro tooltips
+             */
+
+            .tooltip {
+
+                opacity:
+                    1 !important;
+            }
+
+
+            .tooltip .tooltip-inner {
+
+                background: ${TOP_BAR_COLOR} !important;
+                background-color: ${TOP_BAR_COLOR} !important;
+                background-image: none !important;
+
+                border:
+                    1px solid ${DIVIDER_COLOR} !important;
+
+                box-shadow:
+                    0 3px 8px rgba(0, 0, 0, 0.40) !important;
+            }
+
+
+            /* Tooltip arrow - top */
+
+            .tooltip.top .tooltip-arrow,
+            .tooltip.top-left .tooltip-arrow,
+            .tooltip.top-right .tooltip-arrow {
+
+                border-top-color:
+                    ${TOP_BAR_COLOR} !important;
+            }
+
+
+            /* Tooltip arrow - bottom */
+
+            .tooltip.bottom .tooltip-arrow,
+            .tooltip.bottom-left .tooltip-arrow,
+            .tooltip.bottom-right .tooltip-arrow {
+
+                border-bottom-color:
+                    ${TOP_BAR_COLOR} !important;
+            }
+
+
+            /* Tooltip arrow - left */
+
+            .tooltip.left .tooltip-arrow {
+
+                border-left-color:
+                    ${TOP_BAR_COLOR} !important;
+            }
+
+
+            /* Tooltip arrow - right */
+
+            .tooltip.right .tooltip-arrow {
+
+                border-right-color:
+                    ${TOP_BAR_COLOR} !important;
+            }
+
+
+            /* ====================================================
                DESKTOP - UPPER NAV BUTTON HOVER / OPEN
                ==================================================== */
 
@@ -167,10 +381,6 @@
             /* ====================================================
                ALL UPPER NAV DROPDOWNS
                ==================================================== */
-
-            /*
-             * User menu, Create New, etc.
-             */
 
             #user-menu-partial .dropdown-menu,
             #user-menu-partial .user-menu .dropdown-menu,
@@ -233,10 +443,6 @@
             /* ====================================================
                MORE BUTTON
                ==================================================== */
-
-            /*
-             * More belongs to the lower navigation.
-             */
 
             #top-nav-more-dropdown-syn {
 
@@ -328,16 +534,6 @@
                    MOBILE USER BUTTON - NORMAL / OPEN
                    ================================================= */
 
-                /*
-                 * IMPORTANT:
-                 *
-                 * Touch browsers can leave :hover stuck after a tap.
-                 * Also, Syncro keeps aria-expanded=true while the
-                 * menu is open.
-                 *
-                 * Neither state should make the user icon stay dark.
-                 */
-
                 #user-menu-partial .user-menu,
                 #user-menu-partial .user-menu > *,
 
@@ -365,10 +561,6 @@
                 /* =================================================
                    MOBILE USER BUTTON - WHILE PRESSING
                    ================================================= */
-
-                /*
-                 * Only darken during the actual finger press.
-                 */
 
                 #user-menu-partial .user-menu button:active,
                 #user-menu-partial .user-menu a:active,
@@ -402,12 +594,6 @@
                 /* =================================================
                    MOBILE MENU INNER WRAPPERS
                    ================================================= */
-
-                /*
-                 * Syncro gives several nested wrappers their own
-                 * backgrounds. Make those transparent so the main
-                 * charcoal panel shows through.
-                 */
 
                 .tns-mobile-user-menu div,
                 .tns-mobile-user-menu nav,
@@ -471,10 +657,6 @@
                    MOBILE SECTION HEADERS
                    ================================================= */
 
-                /*
-                 * Preferences:, Tools:, etc.
-                 */
-
                 .tns-mobile-user-menu h1,
                 .tns-mobile-user-menu h2,
                 .tns-mobile-user-menu h3,
@@ -514,11 +696,6 @@
     // MOBILE USER MENU DETECTION
     // ============================================================
 
-    /*
-     * Syncro dynamically renders the mobile user menu.
-     * We identify the actual panel and add our own CSS class to it.
-     */
-
     function tagMobileUserMenu() {
 
         if (window.innerWidth > MOBILE_BREAKPOINT) {
@@ -547,11 +724,6 @@
         }
 
 
-        /*
-         * Start inside .user-menu so we don't accidentally tag
-         * some unrelated part of the Syncro page.
-         */
-
         const possibleElements = [
             userRoot,
             ...userRoot.querySelectorAll(
@@ -579,12 +751,6 @@
             });
 
 
-        /*
-         * Pick the smallest matching container.
-         * That should be the actual menu panel rather than
-         * one of its large parent wrappers.
-         */
-
         candidates.sort((a, b) => {
 
             return (
@@ -596,10 +762,6 @@
 
         const mobileMenu = candidates[0];
 
-
-        /*
-         * Remove the class from any stale menu Syncro replaced.
-         */
 
         document
             .querySelectorAll(
