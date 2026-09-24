@@ -4,6 +4,8 @@
 // @version      1.1.0
 // @description  Customizes Syncro top navigation, dropdown menus, and navigation hover colors.
 // @match        https://*.syncromsp.com/*
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20Custom%20Top%20Navigation%20Colors%20(Dark%20Blue).js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20Custom%20Top%20Navigation%20Colors%20(Dark%20Blue).js
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
