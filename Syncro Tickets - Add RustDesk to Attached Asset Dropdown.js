@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Tickets - Add RustDesk to Attached Asset Dropdown
 // @namespace    https://texomans.com/
-// @version      1.0.5
+// @version      1.0.6
 // @description  Adds RustDesk to attached asset remote-access dropdowns on Syncro ticket pages and automatically closes the temporary RustDesk launch tab.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Add%20RustDesk%20to%20Attached%20Asset%20Dropdown.js
@@ -19,34 +19,83 @@
   const ASSET_LINK_SELECTOR =
     'a[href*="/customer_assets/"]';
 
-  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 3000;
+  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY =
+    3000;
 
-  const assetLinkCache = new Map();
+  const assetLinkCache =
+    new Map();
 
   function normalizeUrl(
     value,
     base = window.location.origin
   ) {
-    const trimmed = (value || '').trim();
+    const trimmed =
+      (value || '').trim();
 
-    if (!trimmed) return '';
+    if (!trimmed) {
+      return '';
+    }
 
     try {
-      return new URL(trimmed, base).href;
+      return new URL(
+        trimmed,
+        base
+      ).href;
     } catch {
       return '';
     }
   }
 
-  function openRustDeskLaunchPage(rustDeskUrl) {
+  function isMobileLikeDevice() {
+    if (
+      navigator.userAgentData?.mobile ===
+      true
+    ) {
+      return true;
+    }
+
+    if (
+      /Android|iPhone|iPad|iPod|Mobile/i.test(
+        navigator.userAgent
+      )
+    ) {
+      return true;
+    }
+
+    return (
+      navigator.maxTouchPoints > 0 &&
+      window.matchMedia(
+        '(pointer: coarse)'
+      ).matches
+    );
+  }
+
+  function shouldUseNativeNavigation(event) {
+    return (
+      isMobileLikeDevice() ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    );
+  }
+
+  function openRustDeskLaunchPage(
+    rustDeskUrl
+  ) {
     let launchTab;
 
     try {
-      launchTab = GM_openInTab(rustDeskUrl, {
-        active: true,
-        insert: true,
-        setParent: true
-      });
+      launchTab =
+        GM_openInTab(
+          rustDeskUrl,
+          {
+            active: true,
+            insert: true,
+            setParent: true
+          }
+        );
     } catch (error) {
       console.warn(
         '[RustDesk Ticket Button] Could not open RustDesk launch tab:',
@@ -70,42 +119,56 @@
 
   function decodeHtml(value) {
     const textarea =
-      document.createElement('textarea');
+      document.createElement(
+        'textarea'
+      );
 
-    textarea.innerHTML = value || '';
+    textarea.innerHTML =
+      value ||
+      '';
 
     return textarea.value;
   }
 
   function getAssetIdFromUrl(url) {
     try {
-      const parsed = new URL(
-        url,
-        window.location.origin
-      );
+      const parsed =
+        new URL(
+          url,
+          window.location.origin
+        );
 
       const match =
         parsed.pathname.match(
           /^\/customer_assets\/(\d+)\/?$/
         );
 
-      return match ? match[1] : '';
+      return (
+        match ?
+          match[1] :
+          ''
+      );
     } catch {
       return '';
     }
   }
 
   function isAssetViewLink(anchor) {
-    if (!anchor?.href) return false;
+    if (!anchor?.href) {
+      return false;
+    }
 
     try {
-      const url = new URL(
-        anchor.href,
-        window.location.origin
-      );
+      const url =
+        new URL(
+          anchor.href,
+          window.location.origin
+        );
 
-      return /^\/customer_assets\/\d+\/?$/.test(
-        url.pathname
+      return (
+        /^\/customer_assets\/\d+\/?$/.test(
+          url.pathname
+        )
       );
     } catch {
       return false;
@@ -129,11 +192,15 @@
         targetKey
       )
     ) {
-      return object[targetKey] || '';
+      return (
+        object[targetKey] ||
+        ''
+      );
     }
 
     for (
-      const value of Object.values(object)
+      const value of
+      Object.values(object)
     ) {
       const found =
         findValueByKey(
@@ -141,7 +208,9 @@
           targetKey
         );
 
-      if (found) return found;
+      if (found) {
+        return found;
+      }
     }
 
     return '';
@@ -158,10 +227,14 @@
 
     if (fieldCell) {
       const anchor =
-        fieldCell.querySelector('a[href]');
+        fieldCell.querySelector(
+          'a[href]'
+        );
 
       if (anchor?.href) {
-        return normalizeUrl(anchor.href);
+        return normalizeUrl(
+          anchor.href
+        );
       }
 
       const textUrl =
@@ -169,7 +242,9 @@
           fieldCell.textContent
         );
 
-      if (textUrl) return textUrl;
+      if (textUrl) {
+        return textUrl;
+      }
     }
 
     const propNodes =
@@ -177,7 +252,10 @@
         '[data-react-props], [data-props]'
       );
 
-    for (const node of propNodes) {
+    for (
+      const node of
+      propNodes
+    ) {
       const raw =
         node.getAttribute(
           'data-react-props'
@@ -187,12 +265,17 @@
         ) ||
         '';
 
-      if (!raw.includes('RustDesk Link')) {
+      if (
+        !raw.includes(
+          'RustDesk Link'
+        )
+      ) {
         continue;
       }
 
       try {
-        const props = JSON.parse(raw);
+        const props =
+          JSON.parse(raw);
 
         const found =
           normalizeUrl(
@@ -202,7 +285,9 @@
             )
           );
 
-        if (found) return found;
+        if (found) {
+          return found;
+        }
       } catch {
         // Ignore invalid JSON blocks.
       }
@@ -213,9 +298,13 @@
         /(?:&quot;|")RustDesk Link(?:&quot;|")\s*:?\s*(?:&quot;|")([^"&]+)(?:&quot;|")/
       );
 
-    if (regexMatch?.[1]) {
+    if (
+      regexMatch?.[1]
+    ) {
       return normalizeUrl(
-        decodeHtml(regexMatch[1])
+        decodeHtml(
+          regexMatch[1]
+        )
       );
     }
 
@@ -226,7 +315,9 @@
     assetUrl
   ) {
     const normalizedAssetUrl =
-      normalizeUrl(assetUrl);
+      normalizeUrl(
+        assetUrl
+      );
 
     if (!normalizedAssetUrl) {
       return '';
@@ -243,40 +334,50 @@
     }
 
     const promise =
-      fetch(normalizedAssetUrl, {
-        method: 'GET',
-        credentials: 'same-origin'
-      })
-        .then(async (response) => {
-          if (!response.ok) {
-            throw new Error(
-              `Asset page returned HTTP ${response.status}`
+      fetch(
+        normalizedAssetUrl,
+        {
+          method: 'GET',
+          credentials:
+            'same-origin'
+        }
+      )
+        .then(
+          async (response) => {
+            if (
+              !response.ok
+            ) {
+              throw new Error(
+                `Asset page returned HTTP ${response.status}`
+              );
+            }
+
+            const html =
+              await response.text();
+
+            const assetDoc =
+              new DOMParser().parseFromString(
+                html,
+                'text/html'
+              );
+
+            return getRustDeskLinkFromAssetDocument(
+              assetDoc,
+              html
             );
           }
-
-          const html =
-            await response.text();
-
-          const assetDoc =
-            new DOMParser().parseFromString(
-              html,
-              'text/html'
+        )
+        .catch(
+          (error) => {
+            console.warn(
+              '[RustDesk Ticket Button] Could not fetch asset page:',
+              normalizedAssetUrl,
+              error
             );
 
-          return getRustDeskLinkFromAssetDocument(
-            assetDoc,
-            html
-          );
-        })
-        .catch((error) => {
-          console.warn(
-            '[RustDesk Ticket Button] Could not fetch asset page:',
-            normalizedAssetUrl,
-            error
-          );
-
-          return '';
-        });
+            return '';
+          }
+        );
 
     assetLinkCache.set(
       normalizedAssetUrl,
@@ -286,25 +387,38 @@
     return await promise;
   }
 
-  function getNameCell(assetLink) {
+  function getNameCell(
+    assetLink
+  ) {
     return assetLink.closest(
       'td, [role="cell"], .MuiTableCell-root'
     );
   }
 
-  function getRemoteCell(assetLink) {
+  function getRemoteCell(
+    assetLink
+  ) {
     const nameCell =
-      getNameCell(assetLink);
+      getNameCell(
+        assetLink
+      );
 
-    if (nameCell?.nextElementSibling) {
-      return nameCell.nextElementSibling;
+    if (
+      nameCell?.nextElementSibling
+    ) {
+      return (
+        nameCell.nextElementSibling
+      );
     }
 
-    const row = assetLink.closest(
-      'tr, [role="row"], .MuiTableRow-root'
-    );
+    const row =
+      assetLink.closest(
+        'tr, [role="row"], .MuiTableRow-root'
+      );
 
-    if (!row) return null;
+    if (!row) {
+      return null;
+    }
 
     return (
       row
@@ -333,13 +447,18 @@
         `li[${RUSTDESK_ITEM_ATTR}]`
       )
       .forEach(
-        (item) => item.remove()
+        (item) =>
+          item.remove()
       );
   }
 
-  function findScreenConnectItem(menu) {
+  function findScreenConnectItem(
+    menu
+  ) {
     return Array.from(
-      menu.querySelectorAll('li')
+      menu.querySelectorAll(
+        'li'
+      )
     ).find((li) =>
       /screenconnect/i.test(
         li.textContent || ''
@@ -356,7 +475,9 @@
         'ul.dropdown-menu'
       );
 
-    if (menu) return menu;
+    if (menu) {
+      return menu;
+    }
 
     const remoteButton =
       remoteCell.querySelector(
@@ -365,12 +486,18 @@
       remoteCell.querySelector(
         'a[href*="/remote_access"]'
       ) ||
-      remoteCell.querySelector('.btn');
+      remoteCell.querySelector(
+        '.btn'
+      );
 
-    if (!remoteButton) return null;
+    if (!remoteButton) {
+      return null;
+    }
 
     const dropdownGroup =
-      document.createElement('div');
+      document.createElement(
+        'div'
+      );
 
     dropdownGroup.className =
       'btn-group';
@@ -383,7 +510,9 @@
     `;
 
     const parentGroup =
-      remoteButton.closest('.btn-group');
+      remoteButton.closest(
+        '.btn-group'
+      );
 
     if (parentGroup) {
       parentGroup.appendChild(
@@ -410,18 +539,26 @@
         assetLink.href
       );
 
-    if (!assetId) return;
+    if (!assetId) {
+      return;
+    }
 
     const remoteCell =
-      getRemoteCell(assetLink);
+      getRemoteCell(
+        assetLink
+      );
 
-    if (!remoteCell) return;
+    if (!remoteCell) {
+      return;
+    }
 
     removeExistingRustDeskItem(
       remoteCell
     );
 
-    if (!rustDeskUrl) return;
+    if (!rustDeskUrl) {
+      return;
+    }
 
     const menu =
       getOrCreateDropdownMenu(
@@ -429,10 +566,14 @@
         assetId
       );
 
-    if (!menu) return;
+    if (!menu) {
+      return;
+    }
 
     const rustDeskItem =
-      document.createElement('li');
+      document.createElement(
+        'li'
+      );
 
     rustDeskItem.setAttribute(
       RUSTDESK_ITEM_ATTR,
@@ -440,10 +581,18 @@
     );
 
     const rustDeskAnchor =
-      document.createElement('a');
+      document.createElement(
+        'a'
+      );
 
     rustDeskAnchor.href =
       rustDeskUrl;
+
+    rustDeskAnchor.target =
+      '_blank';
+
+    rustDeskAnchor.rel =
+      'noopener noreferrer';
 
     rustDeskAnchor.textContent =
       'RustDesk';
@@ -451,6 +600,14 @@
     rustDeskAnchor.addEventListener(
       'click',
       (event) => {
+        if (
+          shouldUseNativeNavigation(
+            event
+          )
+        ) {
+          return;
+        }
+
         event.preventDefault();
 
         openRustDeskLaunchPage(
@@ -464,7 +621,9 @@
     );
 
     const screenConnectItem =
-      findScreenConnectItem(menu);
+      findScreenConnectItem(
+        menu
+      );
 
     if (screenConnectItem) {
       menu.insertBefore(
@@ -487,35 +646,49 @@
       .querySelectorAll(
         ASSET_LINK_SELECTOR
       )
-      .forEach((anchor) => {
-        if (!isAssetViewLink(anchor)) {
-          return;
+      .forEach(
+        (anchor) => {
+          if (
+            !isAssetViewLink(
+              anchor
+            )
+          ) {
+            return;
+          }
+
+          const assetId =
+            getAssetIdFromUrl(
+              anchor.href
+            );
+
+          if (!assetId) {
+            return;
+          }
+
+          const row =
+            anchor.closest(
+              'tr, [role="row"], .MuiTableRow-root'
+            );
+
+          if (!row) {
+            return;
+          }
+
+          const remoteCell =
+            getRemoteCell(
+              anchor
+            );
+
+          if (!remoteCell) {
+            return;
+          }
+
+          uniqueLinks.set(
+            assetId,
+            anchor
+          );
         }
-
-        const assetId =
-          getAssetIdFromUrl(
-            anchor.href
-          );
-
-        if (!assetId) return;
-
-        const row =
-          anchor.closest(
-            'tr, [role="row"], .MuiTableRow-root'
-          );
-
-        if (!row) return;
-
-        const remoteCell =
-          getRemoteCell(anchor);
-
-        if (!remoteCell) return;
-
-        uniqueLinks.set(
-          assetId,
-          anchor
-        );
-      });
+      );
 
     return Array.from(
       uniqueLinks.values()
@@ -527,7 +700,8 @@
       getAttachedAssetLinks();
 
     for (
-      const assetLink of assetLinks
+      const assetLink of
+      assetLinks
     ) {
       const rustDeskUrl =
         await fetchRustDeskLinkFromAsset(
@@ -544,12 +718,15 @@
   let pending = false;
 
   function scheduleProcessAttachedAssets() {
-    if (pending) return;
+    if (pending) {
+      return;
+    }
 
     pending = true;
 
     window.setTimeout(() => {
       pending = false;
+
       processAttachedAssets();
     }, 500);
   }
@@ -566,8 +743,11 @@
       scheduleProcessAttachedAssets
     );
 
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
+  observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
 })();
