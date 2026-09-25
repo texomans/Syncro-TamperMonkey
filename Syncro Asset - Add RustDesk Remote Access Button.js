@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Asset - Add RustDesk Remote Access Button
 // @namespace    https://texomans.com/
-// @version      1.1.6
+// @version      1.1.7
 // @description  Adds RustDesk to Syncro asset pages. Uses a Remote Access dropdown when Syncro Remote Access exists, or a direct RustDesk button when it does not. Automatically closes the temporary RustDesk launch tab.
 // @match        https://*.syncromsp.com/customer_assets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Asset%20-%20Add%20RustDesk%20Remote%20Access%20Button.js
@@ -13,22 +13,40 @@
 (function () {
   'use strict';
 
-  const RUSTDESK_ITEM_ATTR = 'data-tns-rustdesk-menu-item';
-  const RUSTDESK_DROPDOWN_ATTR = 'data-tns-rustdesk-remote-dropdown';
-  const RUSTDESK_DIRECT_ATTR = 'data-tns-rustdesk-direct-button';
-  const RUSTDESK_DIRECT_GROUP_ATTR = 'data-tns-rustdesk-direct-group';
+  const RUSTDESK_ITEM_ATTR =
+    'data-tns-rustdesk-menu-item';
 
-  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 3000;
+  const RUSTDESK_DROPDOWN_ATTR =
+    'data-tns-rustdesk-remote-dropdown';
+
+  const RUSTDESK_DIRECT_ATTR =
+    'data-tns-rustdesk-direct-button';
+
+  const RUSTDESK_DIRECT_GROUP_ATTR =
+    'data-tns-rustdesk-direct-group';
+
+  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY =
+    3000;
 
   function normalizeUrl(value) {
-    const trimmed = (value || '').trim();
+    const trimmed =
+      (value || '').trim();
 
-    if (!trimmed) return '';
+    if (!trimmed) {
+      return '';
+    }
 
     try {
-      const url = new URL(trimmed, window.location.origin);
+      const url =
+        new URL(
+          trimmed,
+          window.location.origin
+        );
 
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      if (
+        url.protocol !== 'http:' &&
+        url.protocol !== 'https:'
+      ) {
         return '';
       }
 
@@ -38,15 +56,56 @@
     }
   }
 
-  function openRustDeskLaunchPage(rustDeskUrl) {
+  function isMobileLikeDevice() {
+    if (
+      navigator.userAgentData?.mobile ===
+      true
+    ) {
+      return true;
+    }
+
+    if (
+      /Android|iPhone|iPad|iPod|Mobile/i.test(
+        navigator.userAgent
+      )
+    ) {
+      return true;
+    }
+
+    return (
+      navigator.maxTouchPoints > 0 &&
+      window.matchMedia(
+        '(pointer: coarse)'
+      ).matches
+    );
+  }
+
+  function shouldUseNativeNavigation(event) {
+    return (
+      isMobileLikeDevice() ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    );
+  }
+
+  function openRustDeskLaunchPage(
+    rustDeskUrl
+  ) {
     let launchTab;
 
     try {
-      launchTab = GM_openInTab(rustDeskUrl, {
-        active: true,
-        insert: true,
-        setParent: true
-      });
+      launchTab =
+        GM_openInTab(
+          rustDeskUrl,
+          {
+            active: true,
+            insert: true,
+            setParent: true
+          }
+        );
     } catch (error) {
       console.warn(
         '[RustDesk Asset Button] Could not open RustDesk launch tab:',
@@ -69,43 +128,79 @@
   }
 
   function getRustDeskLinkFromCustomField() {
-    const fieldCell = document.querySelector(
-      'td[data-testid="RustDesk Link"]'
-    );
+    const fieldCell =
+      document.querySelector(
+        'td[data-testid="RustDesk Link"]'
+      );
 
-    if (!fieldCell) return '';
-
-    const anchor = fieldCell.querySelector('a[href]');
-
-    if (anchor?.href) {
-      return normalizeUrl(anchor.href);
+    if (!fieldCell) {
+      return '';
     }
 
-    return normalizeUrl(fieldCell.textContent);
+    const anchor =
+      fieldCell.querySelector(
+        'a[href]'
+      );
+
+    if (anchor?.href) {
+      return normalizeUrl(
+        anchor.href
+      );
+    }
+
+    return normalizeUrl(
+      fieldCell.textContent
+    );
   }
 
   function getRustDeskLinkFromReactProps() {
-    const propNodes = document.querySelectorAll('[data-react-props]');
+    const propNodes =
+      document.querySelectorAll(
+        '[data-react-props]'
+      );
 
     for (const node of propNodes) {
-      const raw = node.getAttribute('data-react-props');
+      const raw =
+        node.getAttribute(
+          'data-react-props'
+        );
 
-      if (!raw || !raw.includes('RustDesk Link')) {
+      if (
+        !raw ||
+        !raw.includes(
+          'RustDesk Link'
+        )
+      ) {
         continue;
       }
 
       try {
-        const props = JSON.parse(raw);
+        const props =
+          JSON.parse(raw);
 
         const candidates = [
-          props?.asset?.properties?.['RustDesk Link'],
-          props?.asset?.new_properties?.['RustDesk Link'],
-          props?.properties?.['RustDesk Link'],
-          props?.new_properties?.['RustDesk Link']
+          props?.asset?.properties?.[
+            'RustDesk Link'
+          ],
+          props?.asset?.new_properties?.[
+            'RustDesk Link'
+          ],
+          props?.properties?.[
+            'RustDesk Link'
+          ],
+          props?.new_properties?.[
+            'RustDesk Link'
+          ]
         ];
 
-        for (const candidate of candidates) {
-          const normalized = normalizeUrl(candidate);
+        for (
+          const candidate of
+          candidates
+        ) {
+          const normalized =
+            normalizeUrl(
+              candidate
+            );
 
           if (normalized) {
             return normalized;
@@ -127,59 +222,100 @@
   }
 
   function getNativeRemoteAccessButton() {
-    return document.querySelector('.btn-remote-access');
+    return document.querySelector(
+      '.btn-remote-access'
+    );
   }
 
   function getBackgroundingToolsButton() {
-    const buttons = document.querySelectorAll('.btn-bar a.btn');
+    const buttons =
+      document.querySelectorAll(
+        '.btn-bar a.btn'
+      );
 
     return (
-      Array.from(buttons).find((button) =>
-        /backgrounding\s+tools/i.test(button.textContent || '')
-      ) || null
+      Array.from(buttons).find(
+        (button) =>
+          /backgrounding\s+tools/i.test(
+            button.textContent || ''
+          )
+      ) ||
+      null
     );
   }
 
   function getButtonBar() {
-    const remoteButton = getNativeRemoteAccessButton();
+    const remoteButton =
+      getNativeRemoteAccessButton();
 
     if (remoteButton) {
-      const bar = remoteButton.closest('.btn-bar');
-      if (bar) return bar;
+      const bar =
+        remoteButton.closest(
+          '.btn-bar'
+        );
+
+      if (bar) {
+        return bar;
+      }
     }
 
-    const backgroundButton = getBackgroundingToolsButton();
+    const backgroundButton =
+      getBackgroundingToolsButton();
 
     if (backgroundButton) {
-      const bar = backgroundButton.closest('.btn-bar');
-      if (bar) return bar;
+      const bar =
+        backgroundButton.closest(
+          '.btn-bar'
+        );
+
+      if (bar) {
+        return bar;
+      }
     }
 
-    return document.querySelector('.btn-bar');
+    return document.querySelector(
+      '.btn-bar'
+    );
   }
 
-  function getNativeRemoteAccessMenu(remoteButton) {
-    const next = remoteButton.nextElementSibling;
+  function getNativeRemoteAccessMenu(
+    remoteButton
+  ) {
+    const next =
+      remoteButton.nextElementSibling;
 
-    if (!next) return null;
-
-    if (!next.matches('.btn-group')) {
+    if (!next) {
       return null;
     }
 
-    if (next.hasAttribute(RUSTDESK_DROPDOWN_ATTR)) {
+    if (
+      !next.matches('.btn-group')
+    ) {
       return null;
     }
 
-    const toggle = next.querySelector(
-      ':scope > .dropdown-toggle'
-    );
+    if (
+      next.hasAttribute(
+        RUSTDESK_DROPDOWN_ATTR
+      )
+    ) {
+      return null;
+    }
 
-    const menu = next.querySelector(
-      ':scope > ul.dropdown-menu'
-    );
+    const toggle =
+      next.querySelector(
+        ':scope > .dropdown-toggle'
+      );
 
-    if (!toggle || !menu) {
+    const menu =
+      next.querySelector(
+        ':scope > ul.dropdown-menu'
+      );
+
+    if (
+      !toggle ||
+      !menu
+    ) {
       return null;
     }
 
@@ -188,17 +324,30 @@
 
   function findScreenConnectItem(menu) {
     return (
-      Array.from(menu.querySelectorAll(':scope > li')).find((li) =>
-        /screen\s*connect/i.test(li.textContent || '')
-      ) || null
+      Array.from(
+        menu.querySelectorAll(
+          ':scope > li'
+        )
+      ).find((li) =>
+        /screen\s*connect/i.test(
+          li.textContent || ''
+        )
+      ) ||
+      null
     );
   }
 
-  function removeRustDeskMenuItemsExcept(keepItem = null) {
+  function removeRustDeskMenuItemsExcept(
+    keepItem = null
+  ) {
     document
-      .querySelectorAll(`li[${RUSTDESK_ITEM_ATTR}]`)
+      .querySelectorAll(
+        `li[${RUSTDESK_ITEM_ATTR}]`
+      )
       .forEach((item) => {
-        if (item !== keepItem) {
+        if (
+          item !== keepItem
+        ) {
           item.remove();
         }
       });
@@ -206,19 +355,33 @@
 
   function removeCustomRemoteDropdown() {
     document
-      .querySelectorAll(`[${RUSTDESK_DROPDOWN_ATTR}]`)
-      .forEach((element) => element.remove());
+      .querySelectorAll(
+        `[${RUSTDESK_DROPDOWN_ATTR}]`
+      )
+      .forEach(
+        (element) =>
+          element.remove()
+      );
   }
 
   function removeDirectRustDeskButton() {
     document
-      .querySelectorAll(`[${RUSTDESK_DIRECT_ATTR}]`)
-      .forEach((element) => element.remove());
+      .querySelectorAll(
+        `[${RUSTDESK_DIRECT_ATTR}]`
+      )
+      .forEach(
+        (element) =>
+          element.remove()
+      );
 
     document
-      .querySelectorAll(`[${RUSTDESK_DIRECT_GROUP_ATTR}]`)
+      .querySelectorAll(
+        `[${RUSTDESK_DIRECT_GROUP_ATTR}]`
+      )
       .forEach((group) => {
-        if (!group.children.length) {
+        if (
+          !group.children.length
+        ) {
           group.remove();
         }
       });
@@ -230,19 +393,36 @@
     removeDirectRustDeskButton();
 
     document
-      .querySelectorAll(`[${RUSTDESK_DIRECT_GROUP_ATTR}]`)
-      .forEach((element) => element.remove());
+      .querySelectorAll(
+        `[${RUSTDESK_DIRECT_GROUP_ATTR}]`
+      )
+      .forEach(
+        (element) =>
+          element.remove()
+      );
   }
 
-  function getOrCreateRustDeskDropdown(remoteButton) {
-    let dropdownGroup = document.querySelector(
-      `[${RUSTDESK_DROPDOWN_ATTR}]`
-    );
+  function getOrCreateRustDeskDropdown(
+    remoteButton
+  ) {
+    let dropdownGroup =
+      document.querySelector(
+        `[${RUSTDESK_DROPDOWN_ATTR}]`
+      );
 
     if (!dropdownGroup) {
-      dropdownGroup = document.createElement('div');
-      dropdownGroup.className = 'btn-group';
-      dropdownGroup.setAttribute(RUSTDESK_DROPDOWN_ATTR, 'true');
+      dropdownGroup =
+        document.createElement(
+          'div'
+        );
+
+      dropdownGroup.className =
+        'btn-group';
+
+      dropdownGroup.setAttribute(
+        RUSTDESK_DROPDOWN_ATTR,
+        'true'
+      );
 
       dropdownGroup.innerHTML = `
         <a
@@ -258,8 +438,14 @@
       `;
     }
 
-    if (remoteButton.nextElementSibling !== dropdownGroup) {
-      remoteButton.insertAdjacentElement('afterend', dropdownGroup);
+    if (
+      remoteButton.nextElementSibling !==
+      dropdownGroup
+    ) {
+      remoteButton.insertAdjacentElement(
+        'afterend',
+        dropdownGroup
+      );
     }
 
     return dropdownGroup.querySelector(
@@ -267,108 +453,219 @@
     );
   }
 
-  function getOrCreateRustDeskMenuItem(menu, rustDeskUrl) {
-    let item = menu.querySelector(
-      `:scope > li[${RUSTDESK_ITEM_ATTR}]`
-    );
+  function getOrCreateRustDeskMenuItem(
+    menu,
+    rustDeskUrl
+  ) {
+    let item =
+      menu.querySelector(
+        `:scope > li[${RUSTDESK_ITEM_ATTR}]`
+      );
 
     if (!item) {
-      item = document.createElement('li');
-      item.setAttribute(RUSTDESK_ITEM_ATTR, 'true');
+      item =
+        document.createElement(
+          'li'
+        );
 
-      const link = document.createElement('a');
+      item.setAttribute(
+        RUSTDESK_ITEM_ATTR,
+        'true'
+      );
 
-      link.textContent = 'RustDesk';
+      const link =
+        document.createElement(
+          'a'
+        );
 
-      link.addEventListener('click', (event) => {
-        event.preventDefault();
+      link.textContent =
+        'RustDesk';
 
-        if (link.href) {
-          openRustDeskLaunchPage(link.href);
+      link.addEventListener(
+        'click',
+        (event) => {
+          if (
+            shouldUseNativeNavigation(
+              event
+            )
+          ) {
+            return;
+          }
+
+          event.preventDefault();
+
+          if (link.href) {
+            openRustDeskLaunchPage(
+              link.href
+            );
+          }
         }
-      });
+      );
 
-      item.appendChild(link);
+      item.appendChild(
+        link
+      );
     }
 
-    const link = item.querySelector('a');
+    const link =
+      item.querySelector('a');
 
     if (link) {
-      link.href = rustDeskUrl;
+      link.href =
+        rustDeskUrl;
+
+      link.target =
+        '_blank';
+
+      link.rel =
+        'noopener noreferrer';
     }
 
-    const screenConnectItem = findScreenConnectItem(menu);
+    const screenConnectItem =
+      findScreenConnectItem(
+        menu
+      );
 
     if (screenConnectItem) {
-      if (screenConnectItem.previousElementSibling !== item) {
-        menu.insertBefore(item, screenConnectItem);
+      if (
+        screenConnectItem.previousElementSibling !==
+        item
+      ) {
+        menu.insertBefore(
+          item,
+          screenConnectItem
+        );
       }
-    } else if (menu.firstElementChild !== item) {
-      menu.insertBefore(item, menu.firstElementChild);
+    } else if (
+      menu.firstElementChild !==
+      item
+    ) {
+      menu.insertBefore(
+        item,
+        menu.firstElementChild
+      );
     }
 
     return item;
   }
 
-  function configureRemoteAccessDropdown(remoteButton, rustDeskUrl) {
+  function configureRemoteAccessDropdown(
+    remoteButton,
+    rustDeskUrl
+  ) {
     removeDirectRustDeskButton();
 
-    let menu = getNativeRemoteAccessMenu(remoteButton);
+    let menu =
+      getNativeRemoteAccessMenu(
+        remoteButton
+      );
 
     if (menu) {
       removeCustomRemoteDropdown();
     } else {
-      menu = getOrCreateRustDeskDropdown(remoteButton);
+      menu =
+        getOrCreateRustDeskDropdown(
+          remoteButton
+        );
     }
 
-    if (!menu) return;
-
-    const rustDeskItem = getOrCreateRustDeskMenuItem(
-      menu,
-      rustDeskUrl
-    );
-
-    removeRustDeskMenuItemsExcept(rustDeskItem);
-  }
-
-  function configureDirectRustDeskButton(rustDeskUrl) {
-    removeCustomRemoteDropdown();
-    removeRustDeskMenuItemsExcept();
-
-    const backgroundButton = getBackgroundingToolsButton();
-    const buttonBar = getButtonBar();
-
-    if (!backgroundButton && !buttonBar) {
+    if (!menu) {
       return;
     }
 
-    let rustDeskButton = document.querySelector(
-      `[${RUSTDESK_DIRECT_ATTR}]`
+    const rustDeskItem =
+      getOrCreateRustDeskMenuItem(
+        menu,
+        rustDeskUrl
+      );
+
+    removeRustDeskMenuItemsExcept(
+      rustDeskItem
     );
+  }
+
+  function configureDirectRustDeskButton(
+    rustDeskUrl
+  ) {
+    removeCustomRemoteDropdown();
+    removeRustDeskMenuItemsExcept();
+
+    const backgroundButton =
+      getBackgroundingToolsButton();
+
+    const buttonBar =
+      getButtonBar();
+
+    if (
+      !backgroundButton &&
+      !buttonBar
+    ) {
+      return;
+    }
+
+    let rustDeskButton =
+      document.querySelector(
+        `[${RUSTDESK_DIRECT_ATTR}]`
+      );
 
     if (!rustDeskButton) {
-      rustDeskButton = document.createElement('a');
-      rustDeskButton.className = 'btn btn-default btn-sm';
-      rustDeskButton.setAttribute(RUSTDESK_DIRECT_ATTR, 'true');
+      rustDeskButton =
+        document.createElement(
+          'a'
+        );
+
+      rustDeskButton.className =
+        'btn btn-default btn-sm';
+
+      rustDeskButton.setAttribute(
+        RUSTDESK_DIRECT_ATTR,
+        'true'
+      );
 
       rustDeskButton.innerHTML =
         '<i class="fas fa-desktop"></i>&nbsp;RustDesk';
 
-      rustDeskButton.addEventListener('click', (event) => {
-        event.preventDefault();
+      rustDeskButton.addEventListener(
+        'click',
+        (event) => {
+          if (
+            shouldUseNativeNavigation(
+              event
+            )
+          ) {
+            return;
+          }
 
-        if (rustDeskButton.href) {
-          openRustDeskLaunchPage(rustDeskButton.href);
+          event.preventDefault();
+
+          if (
+            rustDeskButton.href
+          ) {
+            openRustDeskLaunchPage(
+              rustDeskButton.href
+            );
+          }
         }
-      });
+      );
     }
 
-    rustDeskButton.href = rustDeskUrl;
+    rustDeskButton.href =
+      rustDeskUrl;
 
-    if (backgroundButton?.parentElement) {
+    rustDeskButton.target =
+      '_blank';
+
+    rustDeskButton.rel =
+      'noopener noreferrer';
+
+    if (
+      backgroundButton?.parentElement
+    ) {
       if (
-        rustDeskButton.parentElement !== backgroundButton.parentElement ||
-        rustDeskButton.nextElementSibling !== backgroundButton
+        rustDeskButton.parentElement !==
+          backgroundButton.parentElement ||
+        rustDeskButton.nextElementSibling !==
+          backgroundButton
       ) {
         backgroundButton.parentElement.insertBefore(
           rustDeskButton,
@@ -377,9 +674,13 @@
       }
 
       document
-        .querySelectorAll(`[${RUSTDESK_DIRECT_GROUP_ATTR}]`)
+        .querySelectorAll(
+          `[${RUSTDESK_DIRECT_GROUP_ATTR}]`
+        )
         .forEach((group) => {
-          if (!group.children.length) {
+          if (
+            !group.children.length
+          ) {
             group.remove();
           }
         });
@@ -387,32 +688,52 @@
       return;
     }
 
-    let group = document.querySelector(
-      `[${RUSTDESK_DIRECT_GROUP_ATTR}]`
-    );
+    let group =
+      document.querySelector(
+        `[${RUSTDESK_DIRECT_GROUP_ATTR}]`
+      );
 
     if (!group) {
-      group = document.createElement('div');
-      group.className = 'btn-group';
-      group.setAttribute(RUSTDESK_DIRECT_GROUP_ATTR, 'true');
+      group =
+        document.createElement(
+          'div'
+        );
 
-      buttonBar.prepend(group);
+      group.className =
+        'btn-group';
+
+      group.setAttribute(
+        RUSTDESK_DIRECT_GROUP_ATTR,
+        'true'
+      );
+
+      buttonBar.prepend(
+        group
+      );
     }
 
-    if (rustDeskButton.parentElement !== group) {
-      group.appendChild(rustDeskButton);
+    if (
+      rustDeskButton.parentElement !==
+      group
+    ) {
+      group.appendChild(
+        rustDeskButton
+      );
     }
   }
 
   function updateRustDeskControls() {
-    const rustDeskUrl = getRustDeskLink();
+    const rustDeskUrl =
+      getRustDeskLink();
 
     if (!rustDeskUrl) {
       removeAllRustDeskControls();
+
       return;
     }
 
-    const remoteButton = getNativeRemoteAccessButton();
+    const remoteButton =
+      getNativeRemoteAccessButton();
 
     if (remoteButton) {
       configureRemoteAccessDropdown(
@@ -420,31 +741,45 @@
         rustDeskUrl
       );
     } else {
-      configureDirectRustDeskButton(rustDeskUrl);
+      configureDirectRustDeskButton(
+        rustDeskUrl
+      );
     }
   }
 
   let pending = false;
 
   function scheduleUpdate() {
-    if (pending) return;
+    if (pending) {
+      return;
+    }
 
     pending = true;
 
     window.setTimeout(() => {
       pending = false;
+
       updateRustDeskControls();
     }, 250);
   }
 
   scheduleUpdate();
 
-  window.addEventListener('load', scheduleUpdate);
+  window.addEventListener(
+    'load',
+    scheduleUpdate
+  );
 
-  const observer = new MutationObserver(scheduleUpdate);
+  const observer =
+    new MutationObserver(
+      scheduleUpdate
+    );
 
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
+  observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
 })();
