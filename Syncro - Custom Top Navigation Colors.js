@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - Custom Top Navigation Colors
 // @namespace    https://texomans.com/
-// @version      1.1.7
+// @version      1.1.8
 // @description  Customize the colors of Syncro's main top navigation and secondary navigation bars.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20Custom%20Top%20Navigation%20Colors.js
@@ -26,12 +26,17 @@
     // Lower navigation bar
     const BOTTOM_BAR_COLOR = '#262A30';
 
+
+    // ============================================================
+    // SETTINGS
+    // ============================================================
+
     const MOBILE_BREAKPOINT = 767;
     const STYLE_ID = 'tns-syncro-custom-navigation-colors';
 
 
     // ============================================================
-    // CSS
+    // INSTALL STYLES
     // ============================================================
 
     function installStyles() {
@@ -40,7 +45,9 @@
         if (!style) {
             style = document.createElement('style');
             style.id = STYLE_ID;
-            (document.head || document.documentElement).appendChild(style);
+
+            (document.head || document.documentElement)
+                .appendChild(style);
         }
 
         style.textContent = `
@@ -86,7 +93,7 @@
 
 
             /* ====================================================
-               MAIN SEARCH BOX
+               SEARCH BOX
                ==================================================== */
 
             #top-nav-search-syn .soulmate-search-input,
@@ -324,46 +331,155 @@
                NOTIFICATION DRAWER
                ==================================================== */
 
-            .tns-notification-panel,
-            .tns-notification-panel > * {
+            /*
+             * We now know the exact Syncro structure:
+             *
+             * #slideout-panel-right.syncro-notification-slideout
+             */
+
+            #slideout-panel-right.syncro-notification-slideout {
                 background: ${TOP_BAR_COLOR} !important;
                 background-color: ${TOP_BAR_COLOR} !important;
                 background-image: none !important;
                 border-color: ${DIVIDER_COLOR} !important;
             }
 
-            .tns-notification-panel div,
-            .tns-notification-panel section,
-            .tns-notification-panel article,
-            .tns-notification-panel header,
-            .tns-notification-panel footer,
-            .tns-notification-panel main,
-            .tns-notification-panel ul,
-            .tns-notification-panel li {
+
+            #slideout-panel-right.syncro-notification-slideout
+            .slideout-panel-header {
+                background: ${TOP_BAR_COLOR} !important;
+                background-color: ${TOP_BAR_COLOR} !important;
+                background-image: none !important;
+                border-color: ${DIVIDER_COLOR} !important;
+            }
+
+
+            #slideout-panel-right.syncro-notification-slideout
+            .slideout-panel-body {
+                background: ${TOP_BAR_COLOR} !important;
+                background-color: ${TOP_BAR_COLOR} !important;
+                background-image: none !important;
+                padding-top: 8px !important;
+            }
+
+
+            #slideout-panel-right.syncro-notification-slideout
+            .slideout-panel-body
+            .list-group {
                 background: transparent !important;
                 background-color: transparent !important;
                 background-image: none !important;
-                border-color: ${DIVIDER_COLOR} !important;
             }
 
-            .tns-notification-panel a:hover,
-            .tns-notification-panel a:focus {
-                background: ${BOTTOM_BAR_COLOR} !important;
-                background-color: ${BOTTOM_BAR_COLOR} !important;
-            }
 
-            .tns-notification-dismiss-all {
+            /* ====================================================
+               INDIVIDUAL NOTIFICATIONS
+               ==================================================== */
+
+            /*
+             * Syncro itself uses:
+             *
+             * .slideout-panel-body .list-group .list-group-item {
+             *     background-color: #394b59 !important;
+             * }
+             *
+             * The ID at the beginning of our selector gives our
+             * rule higher specificity, so ours wins.
+             */
+
+            #slideout-panel-right.syncro-notification-slideout
+            .slideout-panel-body
+            .list-group
+            .list-group-item {
+
                 background: ${BOTTOM_BAR_COLOR} !important;
                 background-color: ${BOTTOM_BAR_COLOR} !important;
                 background-image: none !important;
-                border: 1px solid ${DIVIDER_COLOR} !important;
+
+                border-color: ${DIVIDER_COLOR} !important;
+
                 box-shadow: none !important;
             }
 
-            .tns-notification-dismiss-all:hover,
-            .tns-notification-dismiss-all:focus {
-                background: ${TOP_BAR_COLOR} !important;
-                background-color: ${TOP_BAR_COLOR} !important;
+
+            /*
+             * Heading and body remain transparent so the
+             * notification background shows through.
+             */
+
+            #slideout-panel-right.syncro-notification-slideout
+            .slideout-panel-body
+            .list-group
+            .list-group-item
+            .list-group-item-heading,
+
+            #slideout-panel-right.syncro-notification-slideout
+            .slideout-panel-body
+            .list-group
+            .list-group-item
+            .list-group-item-text {
+
+                background: transparent !important;
+                background-color: transparent !important;
+                background-image: none !important;
+            }
+
+
+            /* ----------------------------------------------------
+               NOTIFICATION HOVER - DESKTOP
+               ---------------------------------------------------- */
+
+            @media (hover: hover) {
+
+                #slideout-panel-right.syncro-notification-slideout
+                .slideout-panel-body
+                .list-group
+                .list-group-item:hover,
+
+                #slideout-panel-right.syncro-notification-slideout
+                .slideout-panel-body
+                .list-group
+                .list-group-item:focus {
+
+                    background: ${TOP_BAR_COLOR} !important;
+                    background-color: ${TOP_BAR_COLOR} !important;
+                    background-image: none !important;
+                }
+            }
+
+
+            /* ----------------------------------------------------
+               NOTIFICATION PRESS - TOUCH
+               ---------------------------------------------------- */
+
+            @media (hover: none) {
+
+                #slideout-panel-right.syncro-notification-slideout
+                .slideout-panel-body
+                .list-group
+                .list-group-item:active {
+
+                    background: ${TOP_BAR_COLOR} !important;
+                    background-color: ${TOP_BAR_COLOR} !important;
+                    background-image: none !important;
+                }
+            }
+
+
+            /* ====================================================
+               DISMISS ALL
+               ==================================================== */
+
+            /*
+             * JavaScript converts btn-warning to btn-danger so
+             * this matches Syncro's existing red X buttons.
+             */
+
+            #slideout-panel-right.syncro-notification-slideout
+            .tns-notification-dismiss-all {
+
+                opacity: 1 !important;
+                cursor: pointer !important;
             }
 
 
@@ -372,11 +488,6 @@
                ==================================================== */
 
             @media (max-width: ${MOBILE_BREAKPOINT}px) {
-
-                /*
-                 * Prevent touch devices from keeping a fake hover
-                 * color on the user icon after tapping it.
-                 */
 
                 #user-menu-partial .user-menu,
                 #user-menu-partial .user-menu > *,
@@ -390,26 +501,36 @@
                 #user-menu-partial .user-menu a:focus,
                 #user-menu-partial .user-menu [role="button"]:focus,
                 #user-menu-partial .user-menu [aria-expanded="true"] {
+
                     background: transparent !important;
                     background-color: transparent !important;
                     background-image: none !important;
                     box-shadow: none !important;
                 }
 
+
                 #user-menu-partial .user-menu button:active,
                 #user-menu-partial .user-menu a:active,
                 #user-menu-partial .user-menu [role="button"]:active {
+
                     background: ${BOTTOM_BAR_COLOR} !important;
                     background-color: ${BOTTOM_BAR_COLOR} !important;
                 }
 
+
                 .tns-mobile-user-menu {
+
                     background: ${TOP_BAR_COLOR} !important;
                     background-color: ${TOP_BAR_COLOR} !important;
                     background-image: none !important;
-                    border: 1px solid ${DIVIDER_COLOR} !important;
-                    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4) !important;
+
+                    border:
+                        1px solid ${DIVIDER_COLOR} !important;
+
+                    box-shadow:
+                        0 4px 10px rgba(0, 0, 0, 0.4) !important;
                 }
+
 
                 .tns-mobile-user-menu div,
                 .tns-mobile-user-menu nav,
@@ -418,20 +539,26 @@
                 .tns-mobile-user-menu li,
                 .tns-mobile-user-menu header,
                 .tns-mobile-user-menu footer {
+
                     background: transparent !important;
                     background-color: transparent !important;
                     background-image: none !important;
-                    border-color: ${DIVIDER_COLOR} !important;
+
+                    border-color:
+                        ${DIVIDER_COLOR} !important;
                 }
+
 
                 .tns-mobile-user-menu a,
                 .tns-mobile-user-menu button,
                 .tns-mobile-user-menu [role="menuitem"],
                 .tns-mobile-user-menu [role="button"] {
+
                     background: transparent !important;
                     background-color: transparent !important;
                     background-image: none !important;
                 }
+
 
                 .tns-mobile-user-menu a:hover,
                 .tns-mobile-user-menu a:focus,
@@ -442,6 +569,7 @@
                 .tns-mobile-user-menu [role="menuitem"]:hover,
                 .tns-mobile-user-menu [role="menuitem"]:focus,
                 .tns-mobile-user-menu [role="menuitem"]:active {
+
                     background: ${BOTTOM_BAR_COLOR} !important;
                     background-color: ${BOTTOM_BAR_COLOR} !important;
                 }
@@ -456,9 +584,11 @@
             .main-navbar-container::after,
             .sub-navbar-container::before,
             .sub-navbar-container::after {
+
                 background-image: none !important;
                 box-shadow: none !important;
             }
+
         `;
     }
 
@@ -468,31 +598,45 @@
     // ============================================================
 
     function tagMobileUserMenu() {
+
         if (window.innerWidth > MOBILE_BREAKPOINT) {
+
             document
                 .querySelectorAll('.tns-mobile-user-menu')
                 .forEach(element => {
-                    element.classList.remove('tns-mobile-user-menu');
+
+                    element.classList.remove(
+                        'tns-mobile-user-menu'
+                    );
                 });
 
             return;
         }
 
+
         const userRoot =
-            document.querySelector('#user-menu-partial .user-menu');
+            document.querySelector(
+                '#user-menu-partial .user-menu'
+            );
+
 
         if (!userRoot) {
             return;
         }
 
+
         const candidates = [
             userRoot,
-            ...userRoot.querySelectorAll('div, nav, section, ul')
+            ...userRoot.querySelectorAll(
+                'div, nav, section, ul'
+            )
         ].filter(element => {
+
             const text =
                 (element.textContent || '')
                     .replace(/\s+/g, ' ')
                     .trim();
+
 
             return (
                 text.includes('Notifications') &&
@@ -503,201 +647,126 @@
             );
         });
 
+
         candidates.sort(
             (a, b) =>
                 (a.textContent || '').length -
                 (b.textContent || '').length
         );
 
-        const mobileMenu = candidates[0];
+
+        const mobileMenu =
+            candidates[0];
+
 
         document
             .querySelectorAll('.tns-mobile-user-menu')
             .forEach(element => {
+
                 if (element !== mobileMenu) {
-                    element.classList.remove('tns-mobile-user-menu');
+
+                    element.classList.remove(
+                        'tns-mobile-user-menu'
+                    );
                 }
             });
 
+
         if (mobileMenu) {
-            mobileMenu.classList.add('tns-mobile-user-menu');
+
+            mobileMenu.classList.add(
+                'tns-mobile-user-menu'
+            );
         }
     }
 
 
     // ============================================================
-    // NOTIFICATION DRAWER
+    // DISMISS ALL
     // ============================================================
 
-    function tagNotificationPanel() {
+    function themeDismissAll() {
 
-        /*
-         * Find the small element whose text is specifically
-         * "Syncro Notifications".
-         */
-
-        const titleElement =
-            Array.from(
-                document.querySelectorAll(
-                    'div, span, p, h1, h2, h3, h4, h5'
-                )
-            )
-            .find(element => {
-                const text =
-                    (element.textContent || '')
-                        .replace(/\s+/g, ' ')
-                        .trim();
-
-                return text === 'Syncro Notifications';
-            });
+        const panel =
+            document.querySelector(
+                '#slideout-panel-right.syncro-notification-slideout'
+            );
 
 
-        if (!titleElement) {
+        if (!panel) {
             return;
         }
 
 
-        /*
-         * Walk upward from the title until we find the actual
-         * tall right-side notification drawer.
-         */
+        panel
+            .querySelectorAll(
+                'button, a, input, [role="button"]'
+            )
+            .forEach(element => {
 
-        let element = titleElement;
-        let notificationPanel = null;
-
-
-        while (
-            element &&
-            element !== document.body
-        ) {
-            const rect =
-                element.getBoundingClientRect();
-
-            const computedStyle =
-                window.getComputedStyle(element);
-
-            const nearRightEdge =
-                Math.abs(
-                    window.innerWidth - rect.right
-                ) <= 25;
-
-            const tallEnough =
-                rect.height >=
-                window.innerHeight * 0.60;
-
-            const reasonableWidth =
-                rect.width >= 250 &&
-                rect.width <= 700;
-
-            const drawerPosition =
-                computedStyle.position === 'fixed' ||
-                computedStyle.position === 'absolute';
-
-
-            if (
-                nearRightEdge &&
-                tallEnough &&
-                reasonableWidth &&
-                drawerPosition
-            ) {
-                notificationPanel = element;
-                break;
-            }
-
-
-            element = element.parentElement;
-        }
-
-
-        /*
-         * Fallback for layouts where Syncro changes the
-         * positioning method.
-         */
-
-        if (!notificationPanel) {
-            element = titleElement;
-
-            while (
-                element &&
-                element !== document.body
-            ) {
-                const rect =
-                    element.getBoundingClientRect();
-
-                const nearRightEdge =
-                    Math.abs(
-                        window.innerWidth - rect.right
-                    ) <= 25;
-
-                const tallEnough =
-                    rect.height >=
-                    window.innerHeight * 0.60;
-
-                const reasonableWidth =
-                    rect.width >= 250 &&
-                    rect.width <= 700;
+                let text = '';
 
 
                 if (
-                    nearRightEdge &&
-                    tallEnough &&
-                    reasonableWidth
+                    element.tagName === 'INPUT'
                 ) {
-                    notificationPanel = element;
-                    break;
+
+                    text =
+                        element.value || '';
+
+                } else {
+
+                    text =
+                        element.textContent || '';
                 }
 
 
-                element = element.parentElement;
-            }
-        }
-
-
-        if (!notificationPanel) {
-            return;
-        }
-
-
-        /*
-         * Remove the class from any older drawer that Syncro
-         * may have replaced.
-         */
-
-        document
-            .querySelectorAll('.tns-notification-panel')
-            .forEach(element => {
-                if (element !== notificationPanel) {
-                    element.classList.remove(
-                        'tns-notification-panel'
-                    );
-                }
-            });
-
-
-        notificationPanel.classList.add(
-            'tns-notification-panel'
-        );
-
-
-        /*
-         * Only style the Dismiss All button.
-         * Individual red X buttons remain untouched.
-         */
-
-        notificationPanel
-            .querySelectorAll('button, a')
-            .forEach(element => {
-                const text =
-                    (element.textContent || '')
+                text =
+                    text
                         .replace(/\s+/g, ' ')
                         .trim();
 
-                if (text === 'Dismiss All') {
-                    element.classList.add(
-                        'tns-notification-dismiss-all'
-                    );
+
+                if (
+                    text !== 'Dismiss All'
+                ) {
+                    return;
                 }
+
+
+                /*
+                 * Add our marker.
+                 */
+
+                element.classList.add(
+                    'tns-notification-dismiss-all'
+                );
+
+
+                /*
+                 * Match Syncro's existing red X buttons.
+                 */
+
+                element.classList.remove(
+                    'btn-warning'
+                );
+
+
+                element.classList.add(
+                    'btn-danger'
+                );
             });
+    }
+
+
+    // ============================================================
+    // REFRESH DYNAMIC COMPONENTS
+    // ============================================================
+
+    function refreshDynamicTheme() {
+
+        tagMobileUserMenu();
+        themeDismissAll();
     }
 
 
@@ -711,19 +780,60 @@
     document.addEventListener(
         'DOMContentLoaded',
         () => {
+
             installStyles();
-            tagMobileUserMenu();
-            tagNotificationPanel();
+            refreshDynamicTheme();
         }
     );
 
 
     window.addEventListener(
         'resize',
-        () => {
-            tagMobileUserMenu();
-            tagNotificationPanel();
-        }
+        refreshDynamicTheme
+    );
+
+
+    /*
+     * When the notification bell is clicked, React may take a
+     * moment to render the panel and Dismiss All button.
+     */
+
+    document.addEventListener(
+        'click',
+        event => {
+
+            const target =
+                event.target;
+
+
+            if (!(target instanceof Element)) {
+                return;
+            }
+
+
+            if (
+                target.closest(
+                    '#top-nav-user-notifications-syn'
+                )
+            ) {
+
+                [
+                    0,
+                    50,
+                    100,
+                    200,
+                    350,
+                    600
+                ].forEach(delay => {
+
+                    setTimeout(
+                        themeDismissAll,
+                        delay
+                    );
+                });
+            }
+        },
+        true
     );
 
 
@@ -736,21 +846,32 @@
 
     const observer =
         new MutationObserver(() => {
-            clearTimeout(mutationTimer);
+
+            clearTimeout(
+                mutationTimer
+            );
+
 
             mutationTimer =
-                setTimeout(() => {
-                    tagMobileUserMenu();
-                    tagNotificationPanel();
-                }, 75);
+                setTimeout(
+                    refreshDynamicTheme,
+                    75
+                );
         });
 
 
     function startObserver() {
+
         if (!document.body) {
-            setTimeout(startObserver, 50);
+
+            setTimeout(
+                startObserver,
+                50
+            );
+
             return;
         }
+
 
         observer.observe(
             document.body,
