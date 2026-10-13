@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Tickets - Copy Toolbar and Sticky Header
 // @namespace    https://texomans.com/
-// @version      1.0.9
-// @description  Syncro-styled ticket copy tools plus a solid responsive fixed ticket header that respects notifications, Guided Resolution, and disables sticky mode on mobile.
+// @version      1.1.0
+// @description  Syncro-styled ticket copy tools plus a collapsible, responsive fixed ticket header that respects notifications, Guided Resolution, and disables sticky mode on mobile.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
@@ -17,6 +17,7 @@
   const STATUS_ID = 'tns-ticket-copy-status';
   const STYLE_ID = 'tns-ticket-copy-sticky-style';
   const SPACER_ID = 'tns-ticket-sticky-header-spacer';
+  const TOGGLE_ID = 'tns-ticket-sticky-toggle';
 
   /*
    * Syncro inserts overdue reminders and other page-level
@@ -25,15 +26,21 @@
   const NOTICE_HOST_SELECTOR = '.error-container-thingy';
 
   /*
-   * Sticky header is disabled at this width and below.
+   * Sticky header and collapse toggle are disabled
+   * at this width and below.
+   *
    * Copy tools remain available.
    */
   const MOBILE_BREAKPOINT = 900;
 
   /*
-   * Re-check ticket width / notice positioning ten times
-   * per second. This keeps the fixed header synchronized
-   * with Guided Resolution and dynamic notification banners.
+   * Re-check layout ten times per second.
+   *
+   * This keeps the header synchronized with:
+   * - Guided Resolution
+   * - notifications/reminders
+   * - viewport resizing
+   * - mobile breakpoint changes
    */
   const POLL_MS = 100;
 
@@ -41,7 +48,9 @@
   let stickyNavEls = null;
   let stickyPollTimer = null;
   let stickyLayoutRaf = 0;
+
   let stickyEnabled = false;
+  let stickyCollapsed = false;
 
   // ============================================================
   // General helpers
@@ -74,8 +83,7 @@
       return '';
     }
 
-    const clone =
-      element.cloneNode(true);
+    const clone = element.cloneNode(true);
 
     clone
       .querySelectorAll('br')
@@ -109,35 +117,26 @@
   // Syncro widget / field helpers
   // ============================================================
 
-  function getWidgetByHeader(
-    headerText
-  ) {
+  function getWidgetByHeader(headerText) {
     const wanted =
-      cleanText(
-        headerText
-      ).toLowerCase();
+      cleanText(headerText)
+        .toLowerCase();
 
     const headers =
       document.querySelectorAll(
         '.widget-header h3, .widget-header h2'
       );
 
-    for (
-      const header
-      of headers
-    ) {
+    for (const header of headers) {
       if (
         textOf(header)
-          .toLowerCase() !==
-        wanted
+          .toLowerCase() !== wanted
       ) {
         continue;
       }
 
       const widget =
-        header.closest(
-          '.widget'
-        );
+        header.closest('.widget');
 
       if (widget) {
         return widget;
@@ -168,9 +167,7 @@
 
     for (
       const header
-      of widget.querySelectorAll(
-        'th'
-      )
+      of widget.querySelectorAll('th')
     ) {
       const label =
         textOf(header)
@@ -210,9 +207,7 @@
     }
 
     const headers =
-      row.querySelectorAll(
-        'th'
-      );
+      row.querySelectorAll('th');
 
     const lastHeader =
       headers[
@@ -260,9 +255,7 @@
       document.querySelector(
         '.rs2-ticket-main h1'
       ) ||
-      document.querySelector(
-        'h1'
-      );
+      document.querySelector('h1');
 
     const match =
       textOf(heading).match(
@@ -343,8 +336,7 @@
       );
 
     if (
-      select?.selectedOptions
-        ?.length
+      select?.selectedOptions?.length
     ) {
       const value =
         textOf(
@@ -527,9 +519,7 @@
 
     if (mapLink) {
       const value =
-        multilineTextOf(
-          mapLink
-        );
+        multilineTextOf(mapLink);
 
       if (value) {
         return value;
@@ -537,9 +527,7 @@
     }
 
     const headers =
-      row.querySelectorAll(
-        'th'
-      );
+      row.querySelectorAll('th');
 
     const lastHeader =
       headers[
@@ -551,9 +539,7 @@
         ? lastHeader.nextElementSibling
         : row.querySelector('td');
 
-    return multilineTextOf(
-      cell
-    );
+    return multilineTextOf(cell);
   }
 
   function getAddress() {
@@ -576,9 +562,7 @@
 
       if (mapLink) {
         const value =
-          multilineTextOf(
-            mapLink
-          );
+          multilineTextOf(mapLink);
 
         if (value) {
           return value;
@@ -592,7 +576,7 @@
      *
      * Customer Address
      *
-     * Copy the actual address instead.
+     * Copy the actual Primary Address.
      */
     return getPrimaryAddress();
   }
@@ -630,8 +614,7 @@
       [
         'Ticket',
         getTicketNumber()
-          ? '#' +
-            getTicketNumber()
+          ? '#' + getTicketNumber()
           : ''
       ],
       [
@@ -708,8 +691,7 @@
     sourceButton
   ) {
     const text =
-      String(value || '')
-        .trim();
+      String(value || '').trim();
 
     if (!cleanText(text)) {
       showStatus(
@@ -725,8 +707,7 @@
       return;
     }
 
-    let copied =
-      false;
+    let copied = false;
 
     try {
       if (
@@ -738,8 +719,7 @@
           'text'
         );
 
-        copied =
-          true;
+        copied = true;
       }
     } catch (_) {
       // Fall through.
@@ -747,14 +727,10 @@
 
     if (!copied) {
       try {
-        await navigator
-          .clipboard
-          .writeText(
-            text
-          );
+        await navigator.clipboard
+          .writeText(text);
 
-        copied =
-          true;
+        copied = true;
       } catch (_) {
         try {
           const textarea =
@@ -762,8 +738,7 @@
               'textarea'
             );
 
-          textarea.value =
-            text;
+          textarea.value = text;
 
           textarea.setAttribute(
             'readonly',
@@ -793,8 +768,7 @@
 
           textarea.remove();
         } catch (_) {
-          copied =
-            false;
+          copied = false;
         }
       }
     }
@@ -864,8 +838,7 @@
       return;
     }
 
-    status.textContent =
-      message;
+    status.textContent = message;
 
     status.classList.toggle(
       'tns-copy-status-error',
@@ -901,17 +874,13 @@
         'button'
       );
 
-    button.type =
-      'button';
+    button.type = 'button';
 
     button.className =
       'btn btn-default btn-sm';
 
-    button.textContent =
-      label;
-
-    button.title =
-      title;
+    button.textContent = label;
+    button.title = title;
 
     return button;
   }
@@ -946,8 +915,7 @@
         'div'
       );
 
-    toolbar.id =
-      TOOLBAR_ID;
+    toolbar.id = TOOLBAR_ID;
 
     toolbar.className =
       'tns-ticket-copy-toolbar';
@@ -1010,8 +978,7 @@
         'button'
       );
 
-    moreButton.type =
-      'button';
+    moreButton.type = 'button';
 
     moreButton.className =
       'btn btn-default btn-sm dropdown-toggle';
@@ -1043,35 +1010,14 @@
     );
 
     [
-      [
-        'Customer',
-        'customer'
-      ],
-      [
-        'Contact',
-        'contact'
-      ],
-      [
-        'Phone',
-        'phone'
-      ],
-      [
-        'Mobile',
-        'mobile'
-      ],
-      [
-        'Email',
-        'email'
-      ],
-      [
-        'Address',
-        'address'
-      ]
+      ['Customer', 'customer'],
+      ['Contact', 'contact'],
+      ['Phone', 'phone'],
+      ['Mobile', 'mobile'],
+      ['Email', 'email'],
+      ['Address', 'address']
     ].forEach(
-      ([
-        label,
-        action
-      ]) => {
+      ([label, action]) => {
         const item =
           document.createElement(
             'li'
@@ -1082,22 +1028,15 @@
             'a'
           );
 
-        link.href =
-          '#';
+        link.href = '#';
 
         link.dataset.copyAction =
           action;
 
-        link.textContent =
-          label;
+        link.textContent = label;
 
-        item.appendChild(
-          link
-        );
-
-        menu.appendChild(
-          item
-        );
+        item.appendChild(link);
+        menu.appendChild(item);
       }
     );
 
@@ -1111,8 +1050,7 @@
         'span'
       );
 
-    status.id =
-      STATUS_ID;
+    status.id = STATUS_ID;
 
     status.className =
       'tns-ticket-copy-status';
@@ -1141,11 +1079,8 @@
         event.stopPropagation();
 
         const opening =
-          !moreGroup
-            .classList
-            .contains(
-              'open'
-            );
+          !moreGroup.classList
+            .contains('open');
 
         closeCopyMenus();
 
@@ -1298,8 +1233,7 @@
     element,
     mainInner
   ) {
-    let current =
-      element;
+    let current = element;
 
     while (
       current &&
@@ -1320,11 +1254,11 @@
   }
 
   /*
-   * Measure a normal ticket-content row rather than
-   * the fixed header itself.
+   * Measure a normal ticket-content row rather
+   * than the fixed header itself.
    *
-   * This lets the header track Guided Resolution
-   * opening and closing.
+   * This lets the sticky header follow Guided
+   * Resolution opening and closing.
    */
   function findResponsiveWidthAnchor(
     mainInner
@@ -1389,8 +1323,7 @@
     ) {
       const heading =
         backRow.parentElement
-          ? backRow
-              .parentElement
+          ? backRow.parentElement
               .querySelector(
                 '.row h1'
               )
@@ -1398,9 +1331,7 @@
 
       titleRow =
         heading
-          ? heading.closest(
-              '.row'
-            )
+          ? heading.closest('.row')
           : null;
     }
 
@@ -1443,13 +1374,9 @@
   }
 
   // ============================================================
-  // Vertical positioning
+  // Vertical positioning / Syncro notices
   // ============================================================
 
-  /*
-   * Return true only for elements that currently occupy
-   * visible screen space.
-   */
   function hasVisibleBox(
     element
   ) {
@@ -1461,9 +1388,7 @@
     }
 
     const style =
-      getComputedStyle(
-        element
-      );
+      getComputedStyle(element);
 
     if (
       style.display === 'none' ||
@@ -1476,8 +1401,7 @@
     }
 
     const rect =
-      element
-        .getBoundingClientRect();
+      element.getBoundingClientRect();
 
     return (
       rect.width > 0 &&
@@ -1486,20 +1410,8 @@
   }
 
   /*
-   * Syncro dynamically inserts things such as:
-   *
-   *   Overdue Reminders
-   *   page-level warnings
-   *   dismissible notices
-   *
-   * into .error-container-thingy.
-   *
-   * The normal Syncro page keeps those above the ticket header.
-   * Because our ticket header is position: fixed, we must add the
-   * currently visible notice area to our own top offset.
-   *
-   * We intentionally DO NOT modify the notice's position, color,
-   * z-index, or sticky behavior. Syncro remains responsible for it.
+   * Respect Syncro's dynamic notification/reminder
+   * area above the ticket.
    */
   function getNoticeBottom(
     navBottom
@@ -1513,13 +1425,6 @@
       return navBottom;
     }
 
-    /*
-     * Measure both the host and its direct children.
-     *
-     * Normally the host itself contains the full height,
-     * but checking its children also handles injected wrappers
-     * whose visual position differs from the parent.
-     */
     const candidates = [
       host,
       ...Array.from(
@@ -1535,20 +1440,16 @@
       of candidates
     ) {
       if (
-        !hasVisibleBox(
-          element
-        )
+        !hasVisibleBox(element)
       ) {
         continue;
       }
 
       const rect =
-        element
-          .getBoundingClientRect();
+        element.getBoundingClientRect();
 
       /*
-       * Ignore notices that have completely scrolled above
-       * Syncro's navigation.
+       * Completely above the nav.
        */
       if (
         rect.bottom <=
@@ -1558,12 +1459,8 @@
       }
 
       /*
-       * Only treat the element as a top notification when it is
-       * currently touching or sitting immediately beneath the
-       * Syncro navigation area.
-       *
-       * This prevents unrelated content much farther down the
-       * ticket from ever affecting our sticky offset.
+       * Only consider top notification content,
+       * not arbitrary content farther down.
        */
       if (
         rect.top >
@@ -1573,9 +1470,7 @@
       }
 
       const style =
-        getComputedStyle(
-          element
-        );
+        getComputedStyle(element);
 
       const marginBottom =
         Math.max(
@@ -1612,13 +1507,11 @@
         .filter(Boolean);
 
       if (found.length) {
-        stickyNavEls =
-          found;
+        stickyNavEls = found;
       }
     }
 
-    let navBottom =
-      0;
+    let navBottom = 0;
 
     if (stickyNavEls) {
       for (
@@ -1626,8 +1519,7 @@
         of stickyNavEls
       ) {
         const rect =
-          element
-            .getBoundingClientRect();
+          element.getBoundingClientRect();
 
         if (
           rect.height > 0 &&
@@ -1646,13 +1538,6 @@
         navBottom
       );
 
-    /*
-     * v1.0.9:
-     *
-     * If Syncro has a visible reminder / notification banner,
-     * our fixed ticket header begins BELOW that banner instead
-     * of covering it.
-     */
     return Math.max(
       navBottom,
       getNoticeBottom(
@@ -1662,12 +1547,10 @@
   }
 
   // ============================================================
-  // Match Syncro's background
+  // Match Syncro theme
   // ============================================================
 
-  function isOpaqueColor(
-    value
-  ) {
+  function isOpaqueColor(value) {
     if (
       !value ||
       value === 'transparent'
@@ -1737,15 +1620,23 @@
       : '#1f1f1f';
   }
 
-  function updateStickyBackground(
+  function updateStickyTheme(
     parts
   ) {
+    const source =
+      parts.mainInner ||
+      parts.container ||
+      document.body;
+
     const background =
       getSolidBackground(
-        parts.mainInner ||
-        parts.container ||
-        document.body
+        source
       );
+
+    const foreground =
+      getComputedStyle(
+        source
+      ).color;
 
     document.documentElement
       .style
@@ -1753,6 +1644,15 @@
         '--tns-ticket-sticky-bg',
         background
       );
+
+    if (foreground) {
+      document.documentElement
+        .style
+        .setProperty(
+          '--tns-ticket-sticky-fg',
+          foreground
+        );
+    }
   }
 
   // ============================================================
@@ -1768,30 +1668,21 @@
       parts.mainPane;
 
     const rect =
-      anchor
-        .getBoundingClientRect();
+      anchor.getBoundingClientRect();
 
     return {
-      left:
-        rect.left,
-
-      right:
-        rect.right,
-
-      width:
-        Math.max(
-          0,
-          rect.width
-        )
+      left: rect.left,
+      right: rect.right,
+      width: Math.max(
+        0,
+        rect.width
+      )
     };
   }
 
   /*
-   * Capture how Syncro normally positions each row
-   * relative to the responsive ticket-content area.
-   *
-   * This is always done while the rows are in their
-   * normal, non-fixed Syncro layout.
+   * Capture Syncro's natural header positioning
+   * before adding position: fixed.
    */
   function captureNaturalGeometry(
     parts
@@ -1807,8 +1698,7 @@
       }
 
       const rect =
-        row
-          .getBoundingClientRect();
+        row.getBoundingClientRect();
 
       return {
         leftInset:
@@ -1839,6 +1729,37 @@
     };
   }
 
+  function getPlacementBounds(
+    geometry,
+    bounds
+  ) {
+    if (!geometry) {
+      return {
+        left: bounds.left,
+        right: bounds.right,
+        width: bounds.width
+      };
+    }
+
+    const left =
+      bounds.left +
+      geometry.leftInset;
+
+    const right =
+      bounds.right -
+      geometry.rightInset;
+
+    return {
+      left,
+      right,
+      width:
+        Math.max(
+          0,
+          right - left
+        )
+    };
+  }
+
   function setPxStyle(
     element,
     property,
@@ -1854,11 +1775,10 @@
           property
         ) !== px
     ) {
-      element.style
-        .setProperty(
-          property,
-          px
-        );
+      element.style.setProperty(
+        property,
+        px
+      );
     }
   }
 
@@ -1893,6 +1813,220 @@
   }
 
   // ============================================================
+  // Collapse toggle
+  // ============================================================
+
+  function getCollapseToggle() {
+    return document.getElementById(
+      TOGGLE_ID
+    );
+  }
+
+  function updateCollapseToggle() {
+    const toggle =
+      getCollapseToggle();
+
+    if (!toggle) {
+      return;
+    }
+
+    if (stickyCollapsed) {
+      toggle.textContent = 'v';
+
+      toggle.setAttribute(
+        'aria-expanded',
+        'false'
+      );
+
+      toggle.setAttribute(
+        'aria-label',
+        'Expand sticky ticket header'
+      );
+
+      toggle.title =
+        'Expand sticky ticket header';
+    } else {
+      toggle.textContent = '^';
+
+      toggle.setAttribute(
+        'aria-expanded',
+        'true'
+      );
+
+      toggle.setAttribute(
+        'aria-label',
+        'Collapse sticky ticket header'
+      );
+
+      toggle.title =
+        'Collapse sticky ticket header';
+    }
+  }
+
+  function ensureCollapseToggle(
+    parts
+  ) {
+    let toggle =
+      getCollapseToggle();
+
+    if (toggle) {
+      return toggle;
+    }
+
+    toggle =
+      document.createElement(
+        'button'
+      );
+
+    toggle.id =
+      TOGGLE_ID;
+
+    toggle.type =
+      'button';
+
+    toggle.className =
+      'tns-ticket-sticky-toggle';
+
+    /*
+     * Starts expanded.
+     */
+    updateCollapseToggle();
+
+    toggle.addEventListener(
+      'click',
+      event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        stickyCollapsed =
+          !stickyCollapsed;
+
+        updateCollapseToggle();
+
+        scheduleStickyLayout();
+      }
+    );
+
+    /*
+     * Put it beside our spacer in the ticket DOM.
+     * It uses position: fixed on desktop, so its
+     * DOM position does not affect layout.
+     */
+    const spacer =
+      getSpacer();
+
+    if (
+      spacer?.parentNode
+    ) {
+      spacer.parentNode.insertBefore(
+        toggle,
+        spacer
+      );
+    } else if (
+      parts?.container
+    ) {
+      parts.container.appendChild(
+        toggle
+      );
+    }
+
+    /*
+     * updateCollapseToggle() above ran before the
+     * element existed in the DOM, so update again.
+     */
+    updateCollapseToggle();
+
+    return toggle;
+  }
+
+  function setRowsCollapsed(
+    parts,
+    collapsed
+  ) {
+    [
+      parts?.backRow,
+      parts?.titleRow,
+      parts?.subjectRow
+    ]
+      .filter(Boolean)
+      .forEach(row => {
+        row.classList.toggle(
+          'tns-sticky-row-collapsed',
+          collapsed
+        );
+      });
+  }
+
+  function clearToggleInlineStyles(
+    toggle
+  ) {
+    if (!toggle) {
+      return;
+    }
+
+    toggle.style.removeProperty(
+      'top'
+    );
+
+    toggle.style.removeProperty(
+      'left'
+    );
+
+    toggle.style.removeProperty(
+      'width'
+    );
+
+    toggle.style.removeProperty(
+      'right'
+    );
+  }
+
+  function placeCollapseToggle(
+    toggle,
+    geometry,
+    topPx,
+    bounds
+  ) {
+    if (!toggle) {
+      return 0;
+    }
+
+    const placement =
+      getPlacementBounds(
+        geometry,
+        bounds
+      );
+
+    setPxStyle(
+      toggle,
+      'top',
+      topPx
+    );
+
+    setPxStyle(
+      toggle,
+      'left',
+      placement.left
+    );
+
+    setPxStyle(
+      toggle,
+      'width',
+      placement.width
+    );
+
+    toggle.style.right =
+      'auto';
+
+    toggle.style.display =
+      'block';
+
+    return toggle
+      .getBoundingClientRect()
+      .height;
+  }
+
+  // ============================================================
   // Enable / disable sticky mode
   // ============================================================
 
@@ -1902,6 +2036,15 @@
     if (!parts) {
       return;
     }
+
+    /*
+     * Never leave rows hidden when returning
+     * them to normal Syncro flow.
+     */
+    setRowsCollapsed(
+      parts,
+      false
+    );
 
     parts.backRow
       .classList.remove(
@@ -1937,6 +2080,18 @@
       parts.subjectRow
     );
 
+    const toggle =
+      getCollapseToggle();
+
+    if (toggle) {
+      toggle.style.display =
+        'none';
+
+      clearToggleInlineStyles(
+        toggle
+      );
+    }
+
     const spacer =
       getSpacer();
 
@@ -1948,8 +2103,7 @@
         'none';
     }
 
-    stickyEnabled =
-      false;
+    stickyEnabled = false;
   }
 
   function enableStickyHeader(
@@ -1965,10 +2119,9 @@
 
     /*
      * If the browser was previously in mobile mode,
-     * the header is currently back in Syncro's normal
-     * document flow.
+     * the header is back in Syncro's normal flow.
      *
-     * Recapture its natural geometry before fixing it.
+     * Re-measure it before fixing it again.
      */
     parts.widthAnchor =
       findResponsiveWidthAnchor(
@@ -1980,7 +2133,7 @@
       parts
     );
 
-    updateStickyBackground(
+    updateStickyTheme(
       parts
     );
 
@@ -2006,6 +2159,10 @@
         );
     }
 
+    ensureCollapseToggle(
+      parts
+    );
+
     const spacer =
       getSpacer();
 
@@ -2014,8 +2171,7 @@
         'block';
     }
 
-    stickyEnabled =
-      true;
+    stickyEnabled = true;
   }
 
   function placeRow(
@@ -2031,18 +2187,10 @@
       return 0;
     }
 
-    const left =
-      bounds.left +
-      geometry.leftInset;
-
-    const right =
-      bounds.right -
-      geometry.rightInset;
-
-    const width =
-      Math.max(
-        0,
-        right - left
+    const placement =
+      getPlacementBounds(
+        geometry,
+        bounds
       );
 
     setPxStyle(
@@ -2054,13 +2202,13 @@
     setPxStyle(
       row,
       'left',
-      left
+      placement.left
     );
 
     setPxStyle(
       row,
       'width',
-      width
+      placement.width
     );
 
     row.style.right =
@@ -2086,10 +2234,10 @@
     /*
      * MOBILE
      *
-     * Leave Syncro's ticket header completely native.
+     * No sticky header.
+     * No collapse strip.
      *
-     * Copy toolbar still works, but Back / Ticket # /
-     * Actions / Subject scroll normally with the page.
+     * Syncro behaves normally.
      */
     if (isMobileLayout()) {
       if (stickyEnabled) {
@@ -2102,11 +2250,7 @@
     }
 
     /*
-     * DESKTOP / TABLET
-     *
-     * If we just came back from mobile size,
-     * turn sticky mode back on and recalculate
-     * its natural geometry.
+     * Desktop / tablet.
      */
     if (!stickyEnabled) {
       enableStickyHeader(
@@ -2130,19 +2274,10 @@
       return;
     }
 
-    /*
-     * Also follows Syncro light/dark-theme changes.
-     */
-    updateStickyBackground(
+    updateStickyTheme(
       parts
     );
 
-    /*
-     * v1.0.9:
-     *
-     * This now includes any currently visible Syncro
-     * notification/reminder banner above the ticket.
-     */
     const topOffset =
       calcTopOffset();
 
@@ -2150,14 +2285,64 @@
       topOffset;
 
     /*
-     * Fixed stack:
-     *
-     * Syncro reminder / warning banner
-     *   ↓
-     * Back
-     * Ticket # / controls
-     * Subject
+     * The toggle always sits at the very top
+     * of OUR sticky ticket header, below any
+     * Syncro reminder/notification banner.
      */
+    const toggle =
+      ensureCollapseToggle(
+        parts
+      );
+
+    updateCollapseToggle();
+
+    top += placeCollapseToggle(
+      toggle,
+      parts.geometry.titleRow,
+      top,
+      bounds
+    );
+
+    /*
+     * COLLAPSED
+     *
+     * Leave only the thin toggle strip visible.
+     */
+    if (stickyCollapsed) {
+      setRowsCollapsed(
+        parts,
+        true
+      );
+
+      const spacer =
+        getSpacer();
+
+      if (spacer) {
+        spacer.style.display =
+          'block';
+
+        setPxStyle(
+          spacer,
+          'height',
+          Math.ceil(
+            top -
+            topOffset +
+            2
+          )
+        );
+      }
+
+      return;
+    }
+
+    /*
+     * EXPANDED
+     */
+    setRowsCollapsed(
+      parts,
+      false
+    );
+
     top += placeRow(
       parts.backRow,
       parts.geometry.backRow,
@@ -2203,18 +2388,14 @@
   }
 
   function scheduleStickyLayout() {
-    if (
-      stickyLayoutRaf
-    ) {
+    if (stickyLayoutRaf) {
       return;
     }
 
     stickyLayoutRaf =
       requestAnimationFrame(
         () => {
-          stickyLayoutRaf =
-            0;
-
+          stickyLayoutRaf = 0;
           applyStickyLayout();
         }
       );
@@ -2225,22 +2406,10 @@
   // ============================================================
 
   function startResponsivePolling() {
-    if (
-      stickyPollTimer
-    ) {
+    if (stickyPollTimer) {
       return;
     }
 
-    /*
-     * Polling intentionally covers several dynamic Syncro states:
-     *
-     * - Guided Resolution open / closed
-     * - notification banner appears
-     * - notification banner expands
-     * - reminder dismissed
-     * - reminder snoozed
-     * - browser crosses the mobile breakpoint
-     */
     stickyPollTimer =
       setInterval(
         scheduleStickyLayout,
@@ -2267,20 +2436,15 @@
     if (
       stickyRowsCache &&
       document.contains(
-        stickyRowsCache
-          .backRow
+        stickyRowsCache.backRow
       )
     ) {
       scheduleStickyLayout();
-
       return true;
     }
 
-    stickyRowsCache =
-      null;
-
-    stickyEnabled =
-      false;
+    stickyRowsCache = null;
+    stickyEnabled = false;
 
     const parts =
       getStickyHeaderRows();
@@ -2296,14 +2460,10 @@
       return false;
     }
 
-    stickyRowsCache =
-      parts;
+    stickyRowsCache = parts;
 
     /*
-     * Create the spacer once.
-     *
-     * Desktop sticky mode uses it.
-     * Mobile mode hides it.
+     * Create spacer once.
      */
     let spacer =
       getSpacer();
@@ -2327,15 +2487,13 @@
         if (
           afterNode.nextSibling
         ) {
-          afterNode
-            .parentNode
+          afterNode.parentNode
             .insertBefore(
               spacer,
               afterNode.nextSibling
             );
         } else {
-          afterNode
-            .parentNode
+          afterNode.parentNode
             .appendChild(
               spacer
             );
@@ -2343,17 +2501,26 @@
       }
     }
 
-    /*
-     * Begin in a neutral state.
-     *
-     * applyStickyLayout() decides whether
-     * sticky should actually be enabled.
-     */
     spacer.style.display =
       'none';
 
     spacer.style.height =
       '0px';
+
+    /*
+     * Create our collapse toggle now.
+     * It remains hidden until desktop sticky
+     * mode is enabled.
+     */
+    const toggle =
+      ensureCollapseToggle(
+        parts
+      );
+
+    if (toggle) {
+      toggle.style.display =
+        'none';
+    }
 
     startResponsivePolling();
 
@@ -2440,9 +2607,78 @@
       }
 
       /* ========================================================
+       * Collapse toggle
+       * ======================================================== */
+
+      #${TOGGLE_ID} {
+        position: fixed;
+
+        display: none;
+
+        height: 14px;
+        min-height: 14px;
+
+        margin: 0;
+        padding: 0;
+
+        box-sizing: border-box;
+
+        border: 0;
+        border-radius: 0;
+
+        border-bottom:
+          1px solid
+          rgba(127, 127, 127, 0.28);
+
+        background:
+          var(
+            --tns-ticket-sticky-bg,
+            #1f1f1f
+          );
+
+        background-color:
+          var(
+            --tns-ticket-sticky-bg,
+            #1f1f1f
+          );
+
+        color:
+          var(
+            --tns-ticket-sticky-fg,
+            #eeeeee
+          );
+
+        font-family: inherit;
+        font-size: 11px;
+        font-weight: 700;
+
+        line-height: 12px;
+
+        text-align: center;
+
+        cursor: pointer;
+
+        user-select: none;
+
+        z-index: 14;
+      }
+
+      #${TOGGLE_ID}:hover {
+        border-bottom-color:
+          rgba(127, 127, 127, 0.55);
+      }
+
+      #${TOGGLE_ID}:focus {
+        outline:
+          1px solid
+          rgba(127, 127, 127, 0.6);
+
+        outline-offset:
+          -1px;
+      }
+
+      /* ========================================================
        * Fixed ticket header
-       *
-       * These classes are never present on mobile.
        * ======================================================== */
 
       .tns-sticky-row {
@@ -2455,11 +2691,9 @@
           border-box !important;
 
         /*
-         * Bootstrap .row normally uses
-         * negative horizontal margins.
-         *
-         * Fixed rows already receive exact
-         * left/width values from JS.
+         * Fixed rows receive exact left/width values,
+         * so Bootstrap's negative row margins must
+         * be removed.
          */
         margin-left:
           0 !important;
@@ -2473,9 +2707,6 @@
         margin-bottom:
           0 !important;
 
-        /*
-         * Match Syncro's ticket-area background.
-         */
         background:
           var(
             --tns-ticket-sticky-bg,
@@ -2492,6 +2723,15 @@
           0 !important;
 
         box-shadow:
+          none !important;
+      }
+
+      /*
+       * When collapsed, the real Syncro rows
+       * remain mounted but are completely hidden.
+       */
+      .tns-sticky-row-collapsed {
+        display:
           none !important;
       }
 
@@ -2519,7 +2759,8 @@
       }
 
       /*
-       * Ticket number only consumes what it needs.
+       * Ticket number only consumes the
+       * width it actually needs.
        */
       .tns-sticky-title-row > .col-md-4 {
         float:
@@ -2536,11 +2777,7 @@
       }
 
       /*
-       * Buttons receive the rest of the row.
-       *
-       * They can wrap when Guided Resolution
-       * genuinely makes the pane too narrow,
-       * then automatically unwrap when it closes.
+       * Action bar gets all remaining space.
        */
       .tns-sticky-title-row > .title-btns,
       .tns-sticky-title-row > .btn-bar {
@@ -2592,7 +2829,7 @@
       .tns-sticky-title-row .dropdown-menu,
       .tns-sticky-title-row .open > .dropdown-menu {
         z-index:
-          13 !important;
+          15 !important;
       }
 
       #${SPACER_ID} {
@@ -2607,7 +2844,7 @@
       }
 
       /*
-       * Sticky is completely disabled by JS
+       * Sticky mode itself is disabled by JS
        * at 900px and below.
        */
       @media (max-width: 1100px) {
@@ -2617,6 +2854,13 @@
 
           padding-right:
             7px;
+        }
+      }
+
+      @media (max-width: ${MOBILE_BREAKPOINT}px) {
+        #${TOGGLE_ID} {
+          display:
+            none !important;
         }
       }
     `;
@@ -2675,8 +2919,7 @@
     'keydown',
     event => {
       if (
-        event.key ===
-        'Escape'
+        event.key === 'Escape'
       ) {
         closeCopyMenus();
       }
@@ -2687,14 +2930,12 @@
    * Syncro mounts some ticket components
    * asynchronously.
    */
-  let attempts =
-    0;
+  let attempts = 0;
 
   const initTimer =
     setInterval(
       () => {
-        attempts +=
-          1;
+        attempts += 1;
 
         if (
           initialize() ||
