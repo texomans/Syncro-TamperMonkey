@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro Tickets - Copy Toolbar and Sticky Header
 // @namespace    https://texomans.com/
-// @version      1.0.8
-// @description  Syncro-styled ticket copy tools plus a solid responsive fixed ticket header that respects Guided Resolution and disables sticky mode on mobile.
+// @version      1.0.9
+// @description  Syncro-styled ticket copy tools plus a solid responsive fixed ticket header that respects notifications, Guided Resolution, and disables sticky mode on mobile.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
@@ -19,16 +19,21 @@
   const SPACER_ID = 'tns-ticket-sticky-header-spacer';
 
   /*
+   * Syncro inserts overdue reminders and other page-level
+   * notices into this container immediately above the ticket.
+   */
+  const NOTICE_HOST_SELECTOR = '.error-container-thingy';
+
+  /*
    * Sticky header is disabled at this width and below.
    * Copy tools remain available.
    */
   const MOBILE_BREAKPOINT = 900;
 
   /*
-   * Re-check the ticket-content width ten times per second.
-   *
-   * This keeps the fixed header synchronized with
-   * Guided Resolution opening/closing.
+   * Re-check ticket width / notice positioning ten times
+   * per second. This keeps the fixed header synchronized
+   * with Guided Resolution and dynamic notification banners.
    */
   const POLL_MS = 100;
 
@@ -216,11 +221,8 @@
 
     const cell =
       lastHeader
-        ? lastHeader
-            .nextElementSibling
-        : row.querySelector(
-            'td'
-          );
+        ? lastHeader.nextElementSibling
+        : row.querySelector('td');
 
     if (!cell) {
       return '';
@@ -346,8 +348,7 @@
     ) {
       const value =
         textOf(
-          select
-            .selectedOptions[0]
+          select.selectedOptions[0]
         );
 
       if (value) {
@@ -547,11 +548,8 @@
 
     const cell =
       lastHeader
-        ? lastHeader
-            .nextElementSibling
-        : row.querySelector(
-            'td'
-          );
+        ? lastHeader.nextElementSibling
+        : row.querySelector('td');
 
     return multilineTextOf(
       cell
@@ -1296,11 +1294,6 @@
   // Sticky header helpers
   // ============================================================
 
-  /*
-   * Starting from something inside the normal ticket body,
-   * walk upward until we reach a direct child of
-   * .rs2-ticket-main--uncapped.
-   */
   function findDirectMainChild(
     element,
     mainInner
@@ -1450,8 +1443,158 @@
   }
 
   // ============================================================
-  // Navigation height
+  // Vertical positioning
   // ============================================================
+
+  /*
+   * Return true only for elements that currently occupy
+   * visible screen space.
+   */
+  function hasVisibleBox(
+    element
+  ) {
+    if (
+      !element ||
+      !element.isConnected
+    ) {
+      return false;
+    }
+
+    const style =
+      getComputedStyle(
+        element
+      );
+
+    if (
+      style.display === 'none' ||
+      style.visibility === 'hidden' ||
+      Number(
+        style.opacity || '1'
+      ) === 0
+    ) {
+      return false;
+    }
+
+    const rect =
+      element
+        .getBoundingClientRect();
+
+    return (
+      rect.width > 0 &&
+      rect.height > 0
+    );
+  }
+
+  /*
+   * Syncro dynamically inserts things such as:
+   *
+   *   Overdue Reminders
+   *   page-level warnings
+   *   dismissible notices
+   *
+   * into .error-container-thingy.
+   *
+   * The normal Syncro page keeps those above the ticket header.
+   * Because our ticket header is position: fixed, we must add the
+   * currently visible notice area to our own top offset.
+   *
+   * We intentionally DO NOT modify the notice's position, color,
+   * z-index, or sticky behavior. Syncro remains responsible for it.
+   */
+  function getNoticeBottom(
+    navBottom
+  ) {
+    const host =
+      document.querySelector(
+        NOTICE_HOST_SELECTOR
+      );
+
+    if (!host) {
+      return navBottom;
+    }
+
+    /*
+     * Measure both the host and its direct children.
+     *
+     * Normally the host itself contains the full height,
+     * but checking its children also handles injected wrappers
+     * whose visual position differs from the parent.
+     */
+    const candidates = [
+      host,
+      ...Array.from(
+        host.children
+      )
+    ];
+
+    let maxBottom =
+      navBottom;
+
+    for (
+      const element
+      of candidates
+    ) {
+      if (
+        !hasVisibleBox(
+          element
+        )
+      ) {
+        continue;
+      }
+
+      const rect =
+        element
+          .getBoundingClientRect();
+
+      /*
+       * Ignore notices that have completely scrolled above
+       * Syncro's navigation.
+       */
+      if (
+        rect.bottom <=
+        navBottom
+      ) {
+        continue;
+      }
+
+      /*
+       * Only treat the element as a top notification when it is
+       * currently touching or sitting immediately beneath the
+       * Syncro navigation area.
+       *
+       * This prevents unrelated content much farther down the
+       * ticket from ever affecting our sticky offset.
+       */
+      if (
+        rect.top >
+        navBottom + 64
+      ) {
+        continue;
+      }
+
+      const style =
+        getComputedStyle(
+          element
+        );
+
+      const marginBottom =
+        Math.max(
+          0,
+          parseFloat(
+            style.marginBottom
+          ) || 0
+        );
+
+      maxBottom =
+        Math.max(
+          maxBottom,
+          rect.bottom +
+          marginBottom
+        );
+    }
+
+    return maxBottom;
+  }
 
   function calcTopOffset() {
     if (!stickyNavEls) {
@@ -1474,33 +1617,47 @@
       }
     }
 
-    if (!stickyNavEls) {
-      return 0;
-    }
-
-    let maxBottom =
+    let navBottom =
       0;
 
-    for (
-      const element
-      of stickyNavEls
-    ) {
-      const rect =
-        element.getBoundingClientRect();
-
-      if (
-        rect.height > 0 &&
-        rect.bottom >
-        maxBottom
+    if (stickyNavEls) {
+      for (
+        const element
+        of stickyNavEls
       ) {
-        maxBottom =
-          rect.bottom;
+        const rect =
+          element
+            .getBoundingClientRect();
+
+        if (
+          rect.height > 0 &&
+          rect.bottom >
+          navBottom
+        ) {
+          navBottom =
+            rect.bottom;
+        }
       }
     }
 
+    navBottom =
+      Math.max(
+        0,
+        navBottom
+      );
+
+    /*
+     * v1.0.9:
+     *
+     * If Syncro has a visible reminder / notification banner,
+     * our fixed ticket header begins BELOW that banner instead
+     * of covering it.
+     */
     return Math.max(
-      0,
-      maxBottom
+      navBottom,
+      getNoticeBottom(
+        navBottom
+      )
     );
   }
 
@@ -1768,10 +1925,6 @@
         );
     }
 
-    /*
-     * Remove our fixed positioning completely.
-     * Syncro returns to its normal native layout.
-     */
     clearStickyInlineStyles(
       parts.backRow
     );
@@ -1784,10 +1937,6 @@
       parts.subjectRow
     );
 
-    /*
-     * Fixed rows no longer need replacement
-     * document-flow height on mobile.
-     */
     const spacer =
       getSpacer();
 
@@ -1939,9 +2088,8 @@
      *
      * Leave Syncro's ticket header completely native.
      *
-     * The copy toolbar still exists and still works,
-     * but Back / Ticket # / Actions / Subject scroll
-     * normally with the ticket page.
+     * Copy toolbar still works, but Back / Ticket # /
+     * Actions / Subject scroll normally with the page.
      */
     if (isMobileLayout()) {
       if (stickyEnabled) {
@@ -1989,15 +2137,23 @@
       parts
     );
 
-    const navBottom =
+    /*
+     * v1.0.9:
+     *
+     * This now includes any currently visible Syncro
+     * notification/reminder banner above the ticket.
+     */
+    const topOffset =
       calcTopOffset();
 
     let top =
-      navBottom;
+      topOffset;
 
     /*
      * Fixed stack:
      *
+     * Syncro reminder / warning banner
+     *   ↓
      * Back
      * Ticket # / controls
      * Subject
@@ -2039,7 +2195,7 @@
         'height',
         Math.ceil(
           top -
-          navBottom +
+          topOffset +
           8
         )
       );
@@ -2076,12 +2232,14 @@
     }
 
     /*
-     * Polling makes this insensitive to whatever
-     * internal classes Syncro uses when Guided
-     * Resolution opens/closes.
+     * Polling intentionally covers several dynamic Syncro states:
      *
-     * It also detects moving across the 900px
-     * mobile breakpoint.
+     * - Guided Resolution open / closed
+     * - notification banner appears
+     * - notification banner expands
+     * - reminder dismissed
+     * - reminder snoozed
+     * - browser crosses the mobile breakpoint
      */
     stickyPollTimer =
       setInterval(
@@ -2173,8 +2331,7 @@
             .parentNode
             .insertBefore(
               spacer,
-              afterNode
-                .nextSibling
+              afterNode.nextSibling
             );
         } else {
           afterNode
@@ -2452,9 +2609,6 @@
       /*
        * Sticky is completely disabled by JS
        * at 900px and below.
-       *
-       * We still slightly tighten our toolbar
-       * buttons at narrower desktop/tablet widths.
        */
       @media (max-width: 1100px) {
         #${TOOLBAR_ID} .btn {
