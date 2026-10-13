@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Tickets - Copy Toolbar and Sticky Header
 // @namespace    https://texomans.com/
-// @version      1.1.2
+// @version      1.1.3
 // @description  Syncro-styled ticket copy tools plus a collapsible, responsive fixed ticket header that respects notifications, Guided Resolution, and disables sticky mode on mobile.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
@@ -1830,10 +1830,51 @@
       return;
     }
 
-    if (stickyCollapsed) {
-      toggle.innerHTML =
-        '<i class="fa fas fa-chevron-down" aria-hidden="true"></i>';
+    /*
+     * IMPORTANT:
+     *
+     * Do not replace toggle.innerHTML on every 100 ms layout
+     * refresh. Replacing the <i> element between pointer-down
+     * and pointer-up can cancel the click, which made the first
+     * few clicks after a page refresh seem unreliable.
+     *
+     * Create the icon once, then only change its classes.
+     */
+    let icon =
+      toggle.querySelector(
+        '.tns-ticket-collapse-icon'
+      );
 
+    if (!icon) {
+      icon =
+        document.createElement(
+          'i'
+        );
+
+      icon.className =
+        'fa fas tns-ticket-collapse-icon';
+
+      icon.setAttribute(
+        'aria-hidden',
+        'true'
+      );
+
+      toggle.replaceChildren(
+        icon
+      );
+    }
+
+    icon.classList.toggle(
+      'fa-chevron-down',
+      stickyCollapsed
+    );
+
+    icon.classList.toggle(
+      'fa-chevron-up',
+      !stickyCollapsed
+    );
+
+    if (stickyCollapsed) {
       toggle.setAttribute(
         'aria-expanded',
         'false'
@@ -1847,9 +1888,6 @@
       toggle.title =
         'Expand sticky ticket header';
     } else {
-      toggle.innerHTML =
-        '<i class="fa fas fa-chevron-up" aria-hidden="true"></i>';
-
       toggle.setAttribute(
         'aria-expanded',
         'true'
