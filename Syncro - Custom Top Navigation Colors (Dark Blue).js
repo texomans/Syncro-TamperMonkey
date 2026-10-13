@@ -21,16 +21,16 @@
     const TOP_BAR_COLOR = '#0F1926';
 
     // Thin separator between the two navigation rows
-    const DIVIDER_COLOR = '#1E2227';
+    const DIVIDER_COLOR = '#1C2E47';
 
     // Lower navigation bar
-    const BOTTOM_BAR_COLOR = '#262A30';
+    const BOTTOM_BAR_COLOR = '#132130';
 
     // Hover / selected color for upper navigation and user menu
-    const DROPDOWN_HOVER_COLOR = '#172638';
+    const DROPDOWN_HOVER_COLOR = '#152536';
 
     // Hover / selected color for lower navigation and More menu
-    const BOTTOM_DROPDOWN_HOVER_COLOR = '#30353C';
+    const BOTTOM_DROPDOWN_HOVER_COLOR = '#0A111A';
 
 
     // ============================================================
