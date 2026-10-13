@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Tickets - Copy Toolbar and Sticky Header
 // @namespace    https://texomans.com/
-// @version      1.1.1
+// @version      1.1.2
 // @description  Syncro-styled ticket copy tools plus a collapsible, responsive fixed ticket header that respects notifications, Guided Resolution, and disables sticky mode on mobile.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
@@ -1831,7 +1831,8 @@
     }
 
     if (stickyCollapsed) {
-      toggle.textContent = 'v';
+      toggle.innerHTML =
+        '<i class="fa fas fa-chevron-down" aria-hidden="true"></i>';
 
       toggle.setAttribute(
         'aria-expanded',
@@ -1846,7 +1847,8 @@
       toggle.title =
         'Expand sticky ticket header';
     } else {
-      toggle.textContent = '^';
+      toggle.innerHTML =
+        '<i class="fa fas fa-chevron-up" aria-hidden="true"></i>';
 
       toggle.setAttribute(
         'aria-expanded',
@@ -2615,8 +2617,8 @@
 
         display: none;
 
-        height: 14px;
-        min-height: 14px;
+        height: 24px;
+        min-height: 24px;
 
         margin: 0;
         padding: 0;
@@ -2649,10 +2651,10 @@
           );
 
         font-family: inherit;
-        font-size: 11px;
-        font-weight: 700;
+        font-size: 14px;
+        font-weight: 900;
 
-        line-height: 12px;
+        line-height: 22px;
 
         text-align: center;
 
