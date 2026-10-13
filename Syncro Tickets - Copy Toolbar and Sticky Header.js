@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Tickets - Copy Toolbar and Sticky Header
 // @namespace    https://texomans.com/
-// @version      1.1.0
+// @version      1.1.1
 // @description  Syncro-styled ticket copy tools plus a collapsible, responsive fixed ticket header that respects notifications, Guided Resolution, and disables sticky mode on mobile.
 // @match        https://*.syncromsp.com/tickets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
@@ -2727,11 +2727,21 @@
       }
 
       /*
-       * When collapsed, the real Syncro rows
-       * remain mounted but are completely hidden.
+       * When collapsed, the real Syncro rows remain mounted
+       * but are completely hidden.
+       *
+       * This selector is intentionally more specific than
+       * .tns-sticky-title-row { display: flex !important; }
+       * so the title/actions row cannot reappear while collapsed.
        */
-      .tns-sticky-row-collapsed {
+      .tns-sticky-row.tns-sticky-row-collapsed {
         display:
+          none !important;
+
+        visibility:
+          hidden !important;
+
+        pointer-events:
           none !important;
       }
 
