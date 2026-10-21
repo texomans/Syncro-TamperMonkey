@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - PWPush Password Generator
 // @namespace    https://texomans.com/
-// @version      1.0.4
+// @version      1.0.5
 // @description  Generate secure PWPush links in Syncro; copy them or insert a rich-text ticket reply.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20PWPush%20Password%20Generator.js
@@ -26,6 +26,7 @@
  *    @downloadURL to your fork to avoid overwriting local settings.
  * Requires PWPush OSS API v2 and Syncro access to the customer field.
  * This field is plaintext; limit who can view its value in Syncro.
+ * If an unlock passphrase is set, give it to the recipient separately.
  */
 
 (function () {
@@ -240,11 +241,16 @@
         }
     }
 
-    function buildCustomerHtml(link, days, views) {
+    function buildCustomerHtml(link, days, views, hasPassphrase = false) {
         return [
             '<p>A secure password has been shared with you by ' + escapeHtml(COMPANY_NAME) + '.</p>',
             '<p><span aria-hidden="true" style="font-size:16px;vertical-align:middle;">&#128274;</span>&nbsp;<strong><a href="' + escapeHtml(link) + '" target="_blank" rel="noopener noreferrer">Secure Password Link</a></strong></p>',
             '<p><small>Hosted securely at ' + escapeHtml(PW_HOST) + '</small></p>',
+            ...(hasPassphrase ? [
+                '<p><strong>&#128272; Unlock Passphrase Required:</strong><br>' +
+                'For additional security, this link requires an unlock passphrase before the password can be viewed. ' +
+                'A technician from ' + escapeHtml(COMPANY_NAME) + ' will contact you separately to provide it.</p>'
+            ] : []),
             '<p style="margin:0;line-height:12px;font-size:12px;">&nbsp;</p>',
             '<p style="color:#b42318;"><strong>IMPORTANT NOTES:</strong></p>',
             '<ul style="color:#b42318;">',
@@ -312,6 +318,10 @@
             #${MODAL_ID} .tns-pw-muted { color:#bdc7d3; font-size:12px; }
             #${MODAL_ID} .tns-pw-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:12px 0; }
             #${MODAL_ID} .tns-pw-field { display:flex; flex-direction:column; gap:5px; min-width:0; }
+            #${MODAL_ID} .tns-pw-passphrase-wrap { position:relative; }
+            #${MODAL_ID} .tns-pw-passphrase-wrap input { padding-right:40px; }
+            #${MODAL_ID} .tns-pw-passphrase-wrap button { position:absolute; top:50%; right:4px; transform:translateY(-50%); background:transparent; border:0; color:#c9d5e1; padding:7px 9px; min-width:32px; }
+            #${MODAL_ID} .tns-pw-passphrase-wrap button:hover:not(:disabled) { background:#3c4a58; }
             #${MODAL_ID} label { font-size:13px; color:#f1f3f7; font-weight:600; }
             #${MODAL_ID} input[type="number"], #${MODAL_ID} input[type="text"], #${MODAL_ID} input[type="password"], #${MODAL_ID} select { width:100%; background:#171b21; color:#f7f8fa; border:1px solid #66717e; padding:9px 10px; border-radius:6px; font:inherit; }
             #${MODAL_ID} .tns-pw-check { display:flex; align-items:flex-start; gap:8px; margin:9px 0; cursor:pointer; font-weight:normal; }
@@ -352,8 +362,17 @@
                     <div class="tns-pw-field"><label for="tns-pw-length">Password length</label><input id="tns-pw-length" type="number" min="12" max="64" value="${DEFAULTS.length}"></div>
                     <div class="tns-pw-field"><label for="tns-pw-days">Expires after</label><select id="tns-pw-days"><option value="1">1 day</option><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option><option value="30">30 days</option></select></div>
                     <div class="tns-pw-field"><label for="tns-pw-views">Maximum views</label><select id="tns-pw-views"><option value="1">1 view</option><option value="3" selected>3 views</option><option value="5">5 views</option><option value="10">10 views</option></select></div>
-                    <div class="tns-pw-field"><label>Retrieval confirmation</label><input type="text" value="Enabled" readonly></div>
+                    <div class="tns-pw-field">
+                        <label for="tns-pw-passphrase">Unlock passphrase (optional)</label>
+                        <div class="tns-pw-passphrase-wrap">
+                            <input id="tns-pw-passphrase" type="password" placeholder="Leave blank for none" maxlength="256" autocomplete="off" spellcheck="false">
+                            <button type="button" data-action="toggle-passphrase" aria-label="Show unlock passphrase" aria-pressed="false" title="Show / hide unlock passphrase">
+                                <i class="fas fa-eye" aria-hidden="true"></i>
+                            </button>
+                        </div>
+                    </div>
                 </div>
+                <p class="tns-pw-muted">Optional unlock passphrases must be provided to the recipient separately from this link.</p>
                 <div class="tns-pw-field">
                     <label>Password character types (at least one of each checked type)</label>
                     <div class="tns-pw-classes">
@@ -382,7 +401,7 @@
         const status = $('.tns-pw-status');
         const generate = $('[data-action="generate"]');
         const result = $('.tns-pw-result');
-        const state = { password: '', link: '', days: DEFAULTS.days, views: DEFAULTS.views, busy: false, inserted: false };
+        const state = { password: '', link: '', days: DEFAULTS.days, views: DEFAULTS.views, hasPassphrase: false, busy: false, inserted: false };
 
         function setStatus(text, error = false) {
             status.textContent = text;
@@ -393,18 +412,30 @@
             document.removeEventListener('keydown', keyHandler);
             state.password = '';
             state.link = '';
+            $('#tns-pw-passphrase').value = '';
             overlay.remove();
         }
         function keyHandler(event) { if (event.key === 'Escape') close(); }
         document.addEventListener('keydown', keyHandler);
         overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
         $('[data-action="close"]').addEventListener('click', close);
+        $('[data-action="toggle-passphrase"]').addEventListener('click', () => {
+            const input = $('#tns-pw-passphrase');
+            const button = $('[data-action="toggle-passphrase"]');
+            const showing = input.type === 'password';
+            input.type = showing ? 'text' : 'password';
+            button.setAttribute('aria-label', showing ? 'Hide unlock passphrase' : 'Show unlock passphrase');
+            button.setAttribute('aria-pressed', String(showing));
+            button.querySelector('i').className = showing ? 'fas fa-eye-slash' : 'fas fa-eye';
+        });
 
         generate.addEventListener('click', async () => {
             if (state.busy) return;
             const length = Number($('#tns-pw-length').value);
             const days = Number($('#tns-pw-days').value);
             const views = Number($('#tns-pw-views').value);
+            const unlockPassphrase = $('#tns-pw-passphrase').value.trim();
+            $('#tns-pw-passphrase').value = unlockPassphrase;
             const rules = {
                 uppercase: $('#tns-pw-uppercase').checked,
                 lowercase: $('#tns-pw-lowercase').checked,
@@ -446,30 +477,37 @@
                     push: {
                         kind: 'text', payload: password,
                         expire_after_days: days, expire_after_views: views,
-                        retrieval_step: true, deletable_by_viewer: false
+                        retrieval_step: true, deletable_by_viewer: false,
+                        ...(unlockPassphrase ? { passphrase: unlockPassphrase } : {})
                     }
                 }, token);
                 if (pushed?.retrieval_step !== true) {
                     throw new Error('PWPush did not enable retrieval confirmation.');
+                }
+                // PWPush OSS v2.14 returns the passphrase in its create response.
+                // Never log the passphrase or include it in the shared message.
+                if (unlockPassphrase && pushed.passphrase !== unlockPassphrase) {
+                    throw new Error('PWPush did not confirm the unlock passphrase. No link was shared.');
                 }
                 const link = getSafeShareUrl(pushed.html_url);
                 state.password = password;
                 state.link = link;
                 state.days = days;
                 state.views = views;
+                state.hasPassphrase = Boolean(unlockPassphrase);
                 $('#tns-pw-password').value = password;
                 $('#tns-pw-url').value = link;
-                $('.tns-pw-preview').innerHTML = buildCustomerHtml(link, days, views);
+                $('.tns-pw-preview').innerHTML = buildCustomerHtml(link, days, views, state.hasPassphrase);
                 result.classList.add('show');
 
                 const copied = await copyText(link);
                 const wantsInsert = ticketMode && $('#tns-pw-insert')?.checked;
-                const inserted = wantsInsert && appendToTicket(buildCustomerHtml(link, days, views));
+                const inserted = wantsInsert && appendToTicket(buildCustomerHtml(link, days, views, state.hasPassphrase));
                 state.inserted = Boolean(inserted);
                 if (copied && inserted) setStatus('Link copied and rich-text message inserted. Review the ticket before submitting.');
                 else if (inserted) setStatus('Message inserted; clipboard copy failed. Use Copy Link.');
                 else if (copied && wantsInsert) setStatus('Link copied. Ticket editor not found; paste or insert manually.');
-                else if (copied) setStatus('Secure sharing link copied to clipboard.');
+                else if (copied) setStatus('Secure sharing link copied to clipboard.' + (state.hasPassphrase ? ' Provide the unlock passphrase separately.' : ''));
                 else setStatus('Link created but clipboard copy failed. Use Copy Link.', true);
             } catch (error) {
                 // Never log the API token or password, even on error.
@@ -498,7 +536,7 @@
         $('[data-action="insert"]')?.addEventListener('click', () => {
             if (!state.link) return;
             if (state.inserted) return setStatus('The message is already inserted in this ticket.');
-            if (appendToTicket(buildCustomerHtml(state.link, state.days, state.views))) {
+            if (appendToTicket(buildCustomerHtml(state.link, state.days, state.views, state.hasPassphrase))) {
                 state.inserted = true;
                 setStatus('Rich-text message inserted. Review before submitting.');
             } else {
