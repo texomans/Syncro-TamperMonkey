@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - PWPush Password Generator
 // @namespace    https://texomans.com/
-// @version      1.0.3
+// @version      1.0.4
 // @description  Generate secure PWPush links in Syncro; copy them or insert a rich-text ticket reply.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20PWPush%20Password%20Generator.js
@@ -13,12 +13,29 @@
 // @grant        GM_registerMenuCommand
 // ==/UserScript==
 
+/*
+ * COMMUNITY SETUP (edit for your MSP):
+ * 1. In Syncro, create a plain-text CUSTOMER custom field named
+ *    "TNS Secure Share API Key" (or change FIELD_NAME below).
+ * 2. On your MSP's own customer record, populate that field with a
+ *    valid Password Pusher API token. NEVER put the token in this script.
+ * 3. Update CUSTOMER_ID from your Syncro /customers/123 URL,
+ *    PW_HOST (hostname only), and COMPANY_NAME below.
+ * 4. Also change @connect above to your PW_HOST for API access.
+ * 5. If you fork/customize, update @namespace, @updateURL, and
+ *    @downloadURL to your fork to avoid overwriting local settings.
+ * Requires PWPush OSS API v2 and Syncro access to the customer field.
+ * This field is plaintext; limit who can view its value in Syncro.
+ */
+
 (function () {
     'use strict';
 
+    // MSP configuration: edit these values to use your own instance.
     const CUSTOMER_ID = 4409721;
     const FIELD_NAME = 'TNS Secure Share API Key';
     const PW_HOST = 'secureshare.texomans.com';
+    const COMPANY_NAME = 'Texoma Network Solutions';
     const PW_BASE = 'https://' + PW_HOST;
     const MENU_MARKER = 'data-tns-pwpush-menu';
     const MODAL_ID = 'tns-pwpush-modal';
@@ -66,7 +83,7 @@
     function fieldFromHtmlDocument(doc) {
         // Syncro customer custom fields are rendered as:
         // <div class="col-md-6 mbm">
-        //   <p class="table-entry-head-wrap">TNS Secure Share API Key</p>
+        //   <p class="table-entry-head-wrap">FIELD_NAME (your custom field label)</p>
         //   API_VALUE
         // </div>
         // The API value can be a TEXT NODE, not an input or a table cell.
@@ -126,12 +143,12 @@
         });
         const returnedUrl = new URL(response.url);
         if (!response.ok || returnedUrl.origin !== location.origin || returnedUrl.pathname !== path) {
-            throw new Error('Could not open the TNS customer record. Check your Syncro session and permissions.');
+            throw new Error('Could not open the configured customer record. Check your Syncro session and permissions.');
         }
         const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
         const token = fieldFromHtmlDocument(doc);
         if (!token) {
-            throw new Error('The TNS Secure Share API Key field was not readable from the customer page.');
+            throw new Error('The configured API key field was not readable from the customer page.');
         }
         return token;
     }
@@ -175,7 +192,7 @@
                     }
                 },
                 ontimeout() { reject(new Error('Timed out waiting for PWPush.')); },
-                onerror() { reject(new Error('Unable to reach secureshare.texomans.com.')); }
+                onerror() { reject(new Error('Unable to reach ' + PW_HOST + '.')); }
             });
         });
     }
@@ -225,7 +242,7 @@
 
     function buildCustomerHtml(link, days, views) {
         return [
-            '<p>A secure password has been shared with you by Texoma Network Solutions.</p>',
+            '<p>A secure password has been shared with you by ' + escapeHtml(COMPANY_NAME) + '.</p>',
             '<p><span aria-hidden="true" style="font-size:16px;vertical-align:middle;">&#128274;</span>&nbsp;<strong><a href="' + escapeHtml(link) + '" target="_blank" rel="noopener noreferrer">Secure Password Link</a></strong></p>',
             '<p><small>Hosted securely at ' + escapeHtml(PW_HOST) + '</small></p>',
             '<p style="margin:0;line-height:12px;font-size:12px;">&nbsp;</p>',
@@ -548,7 +565,7 @@
     }
 
     if (typeof GM_registerMenuCommand === 'function') {
-        GM_registerMenuCommand('TNS Secure Share: Generate Password', () => showDialog('global'));
+        GM_registerMenuCommand('Secure Share: Generate Password', () => showDialog('global'));
     }
     let scheduled = false;
     const observer = new MutationObserver(() => {
