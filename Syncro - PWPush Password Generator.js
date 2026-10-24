@@ -27,6 +27,7 @@
  * Requires PWPush OSS API v2 and Syncro access to the customer field.
  * This field is plaintext; limit who can view its value in Syncro.
  * If an unlock passphrase is set, give it to the recipient separately.
+ * v1.0.6 diagnostics include safe metadata only (no secrets or links).
  */
 
 (function () {
@@ -231,6 +232,13 @@
         const status = facts.httpStatus;
         let explanation;
         switch (status) {
+            case 301:
+            case 302:
+            case 303:
+            case 307:
+            case 308:
+                explanation = 'The API returned an HTTP redirect instead of JSON. Check proxy authentication and routing.';
+                break;
             case 400:
             case 422:
                 explanation = 'PWPush rejected the request settings. Check password rules, expiration limits, and server policy.';
@@ -721,6 +729,7 @@
 
         generate.addEventListener('click', async () => {
             if (state.busy) return;
+            clearDiagnostic();
             const length = Number($('#tns-pw-length').value);
             const days = Number($('#tns-pw-days').value);
             const views = Number($('#tns-pw-views').value);
@@ -744,7 +753,6 @@
             state.busy = true;
             generate.disabled = true;
             state.inserted = false;
-            clearDiagnostic();
             let currentStep = 'Read Syncro customer API key';
             setStatus('Reading API key from your Syncro customer record...');
             let token;
