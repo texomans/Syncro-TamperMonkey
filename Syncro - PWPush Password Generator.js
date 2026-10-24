@@ -159,7 +159,7 @@
         return error;
     }
 
-    function responseFacts(response, endpoint, startedAt) {
+    function responseFacts(response, endpoint, startedAt, secrets = []) {
         const rawHeaders = String(response?.responseHeaders || '');
         const headers = rawHeaders.split(/\r?\n/);
         function header(name) {
@@ -179,6 +179,12 @@
         const requestId = header('x-request-id');
         const cfRay = header('cf-ray');
         const retryAfter = header('retry-after');
+        // Do not include an identifier if a broken/malicious upstream
+        // accidentally returns any portion of a secret as a trace ID.
+        const sensitive = secrets.filter(value => typeof value === 'string' && value.length > 0);
+        const safeIdentifier = (value, format) =>
+            format.test(value) && !sensitive.some(secret => value.includes(secret) || secret.includes(value))
+                ? value : '';
         let redirected = 'Unknown';
         if (typeof response?.finalUrl === 'string' && response.finalUrl) {
             try {
@@ -196,8 +202,8 @@
             contentType: contentType,
             redirected: redirected,
             // Only fixed-format IDs are accepted. Never print arbitrary headers.
-            requestId: /^[a-zA-Z0-9_-]{1,80}$/.test(requestId) ? requestId : '',
-            cfRay: /^[a-zA-Z0-9-]{1,80}$/.test(cfRay) ? cfRay : '',
+            requestId: safeIdentifier(requestId, /^[a-zA-Z0-9_-]{1,80}$/),
+            cfRay: safeIdentifier(cfRay, /^[a-zA-Z0-9-]{1,80}$/),
             retryAfter: /^\d{1,5}$/.test(retryAfter) ? retryAfter : '',
             networkLayer: networkLayer,
             elapsedMs: Date.now() - startedAt
@@ -266,6 +272,9 @@
                 explanation = status >= 500
                     ? 'A server or proxy error occurred. Check PWPush and proxy logs.'
                     : 'The request was refused. Check PWPush and proxy logs for the corresponding time.';
+        }
+        if ((status === 401 || status === 403) && facts.contentType === 'HTML') {
+            explanation += ' An HTML response suggests the proxy or sign-in layer may be involved.';
         }
         const details = { ...facts };
         if (status === 400 || status === 422) {
@@ -374,14 +383,20 @@
                     },
                     data: JSON.stringify(payload),
                     onload(response) {
-                        const facts = responseFacts(response, path, startedAt);
+                        const facts = responseFacts(response, path, startedAt, [token, payload?.push?.payload, payload?.push?.passphrase]);
                         if (facts.redirected === 'Yes' && facts.httpStatus >= 200 && facts.httpStatus < 300) {
                             reject(diagnosticError(step, 'UNEXPECTED_REDIRECT',
                                 step + ' was redirected away from the PWPush endpoint. Check proxy authentication or routing.',
                                 facts));
                             return;
                         }
-                        if (!facts.httpStatus || facts.httpStatus < 200 || facts.httpStatus >= 300) {
+                        if (!facts.httpStatus) {
+                            reject(diagnosticError(step, 'NO_HTTP_RESPONSE',
+                                step + ' returned no valid HTTP status. Check the browser, network, TLS, and proxy.',
+                                facts));
+                            return;
+                        }
+                        if (facts.httpStatus < 200 || facts.httpStatus >= 300) {
                             reject(httpFailure(step, path, response, facts));
                             return;
                         }
