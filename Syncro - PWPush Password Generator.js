@@ -568,6 +568,10 @@
             #${MODAL_ID} .tns-pw-main:hover:not(:disabled) { background:#3074b8; }
             #${MODAL_ID} .tns-pw-status { min-height:20px; margin:12px 0 0; color:#a8d9b4; }
             #${MODAL_ID} .tns-pw-status.error { color:#ffafaa; }
+            #${MODAL_ID} .tns-pw-diagnostics { margin-top:10px; padding:10px 12px; background:#181d25; border:1px solid #546071; border-radius:6px; }
+            #${MODAL_ID} .tns-pw-diagnostics summary { font-weight:600; cursor:pointer; color:#d1e2f5; }
+            #${MODAL_ID} .tns-pw-diagnostics pre { margin:10px 0; white-space:pre-wrap; overflow-wrap:anywhere; color:#e2e6eb; background:#11171e; border-radius:5px; padding:10px; font:12px/1.5 monospace; }
+            #${MODAL_ID} .tns-pw-diagnostics .tns-pw-muted { margin:8px 0 0; }
             #${MODAL_ID} .tns-pw-result { display:none; margin-top:12px; padding-top:13px; border-top:1px solid #49515a; }
             #${MODAL_ID} .tns-pw-result.show { display:block; }
             #${MODAL_ID} .tns-pw-preview { margin-top:11px; padding:12px; background:white; color:#262626; border-radius:6px; overflow-wrap:anywhere; font:14px/1.55 Arial,sans-serif; }
@@ -619,6 +623,12 @@
                 <p class="tns-pw-muted">The ticket is never submitted automatically. Existing text and the Public/Private selection are preserved.</p>
                 <div class="tns-pw-actions"><button type="button" class="tns-pw-main" data-action="generate">Generate &amp; Share</button></div>
                 <div class="tns-pw-status" aria-live="polite"></div>
+                <details class="tns-pw-diagnostics" hidden>
+                    <summary>Safe troubleshooting details</summary>
+                    <pre class="tns-pw-diagnostic-text"></pre>
+                    <button type="button" data-action="copy-diagnostics">Copy Diagnostics</button>
+                    <p class="tns-pw-muted">Only safe metadata is included: never an API key, password, unlock passphrase, or secret link.</p>
+                </details>
                 <section class="tns-pw-result" aria-label="Generated result">
                     <div class="tns-pw-field"><label for="tns-pw-password">Generated password</label><input id="tns-pw-password" type="password" readonly autocomplete="off"></div>
                     <div class="tns-pw-actions"><button type="button" data-action="toggle">Show / Hide Password</button><button type="button" data-action="copy-password">Copy Password</button></div>
@@ -633,11 +643,38 @@
         const status = $('.tns-pw-status');
         const generate = $('[data-action="generate"]');
         const result = $('.tns-pw-result');
-        const state = { password: '', link: '', days: DEFAULTS.days, views: DEFAULTS.views, hasPassphrase: false, busy: false, inserted: false };
+        const state = { password: '', link: '', days: DEFAULTS.days, views: DEFAULTS.views, hasPassphrase: false, busy: false, inserted: false, diagnosticText: '' };
 
         function setStatus(text, error = false) {
             status.textContent = text;
             status.classList.toggle('error', error);
+        }
+        function clearDiagnostic() {
+            state.diagnosticText = '';
+            const details = $('.tns-pw-diagnostics');
+            details.hidden = true;
+            details.open = false;
+            $('.tns-pw-diagnostic-text').textContent = '';
+            $('[data-action="copy-diagnostics"]').textContent = 'Copy Diagnostics';
+        }
+        function showError(error, currentStep) {
+            // Only known, constant script messages and our allowlisted
+            // diagnostic errors may be shown. Never echo raw server bodies.
+            const rawMessage = error instanceof Error ? error.message : '';
+            const knownScriptMessage = /^PWPush (returned|did not|included)|^The secure sharing link is invalid/.test(rawMessage);
+            const message = error?.safeDiagnostic
+                ? error.message
+                : knownScriptMessage
+                    ? rawMessage
+                    : 'An unexpected error occurred while processing the request. See safe troubleshooting details.';
+            setStatus(message, true);
+            const safeError = error?.safeDiagnostic ? error :
+                diagnosticError(currentStep, 'UNEXPECTED_SCRIPT_ERROR', message);
+            state.diagnosticText = formatDiagnostic(safeError, currentStep);
+            $('.tns-pw-diagnostic-text').textContent = state.diagnosticText;
+            const details = $('.tns-pw-diagnostics');
+            details.hidden = false;
+            details.open = true;
         }
         function close() {
             if (state.busy) return;
@@ -651,6 +688,12 @@
         document.addEventListener('keydown', keyHandler);
         overlay.addEventListener('click', event => { if (event.target === overlay) close(); });
         $('[data-action="close"]').addEventListener('click', close);
+        $('[data-action="copy-diagnostics"]').addEventListener('click', async () => {
+            if (!state.diagnosticText) return;
+            const copied = await copyText(state.diagnosticText);
+            $('[data-action="copy-diagnostics"]').textContent = copied
+                ? 'Diagnostics Copied' : 'Copy failed - select and copy the text';
+        });
         $('[data-action="toggle-passphrase"]').addEventListener('click', () => {
             const input = $('#tns-pw-passphrase');
             const button = $('[data-action="toggle-passphrase"]');
@@ -686,10 +729,13 @@
             state.busy = true;
             generate.disabled = true;
             state.inserted = false;
+            clearDiagnostic();
+            let currentStep = 'Read Syncro customer API key';
             setStatus('Reading API key from your Syncro customer record...');
             let token;
             try {
                 token = await readApiToken();
+                currentStep = 'Generate password';
                 setStatus('Generating password through PWPush...');
                 const generated = await pwpushPost('/api/v2/generate', {
                     type: 'password', length, count: 1,
@@ -703,7 +749,9 @@
                     avoid_ambiguous: rules.avoidAmbiguous
                 }, token);
                 const password = generated?.results?.[0];
+                currentStep = 'Validate generated password';
                 validateGeneratedPassword(password, length, rules);
+                currentStep = 'Create secure sharing link';
                 setStatus('Creating 7-day/3-view secure link (or your selected expiration)...');
                 const pushed = await pwpushPost('/api/v2/pushes', {
                     push: {
@@ -713,6 +761,7 @@
                         ...(unlockPassphrase ? { passphrase: unlockPassphrase } : {})
                     }
                 }, token);
+                currentStep = 'Validate secure sharing link';
                 if (pushed?.retrieval_step !== true) {
                     throw new Error('PWPush did not enable retrieval confirmation.');
                 }
@@ -742,8 +791,9 @@
                 else if (copied) setStatus('Secure sharing link copied to clipboard.' + (state.hasPassphrase ? ' Provide the unlock passphrase separately.' : ''));
                 else setStatus('Link created but clipboard copy failed. Use Copy Link.', true);
             } catch (error) {
-                // Never log the API token or password, even on error.
-                setStatus(error instanceof Error ? error.message : 'Could not create the secure link.', true);
+                // Never log the API token, generated password, passphrase,
+                // response body, or secret URL, even in diagnostics.
+                showError(error, currentStep);
                 generate.disabled = false;
             } finally {
                 token = null;
