@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - PWPush Password Generator
 // @namespace    https://texomans.com/
-// @version      1.0.5
+// @version      1.0.6
 // @description  Generate secure PWPush links in Syncro; copy them or insert a rich-text ticket reply.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20PWPush%20Password%20Generator.js
@@ -135,66 +135,298 @@
         return '';
     }
 
+
+    // Diagnostic data is deliberately allowlisted. Never copy raw responses,
+    // request bodies, Authorization headers, passwords, or passphrases.
+    const SCRIPT_VERSION = '1.0.6';
+
+    function diagnosticError(step, code, message, facts = {}) {
+        const error = new Error(message);
+        error.safeDiagnostic = {
+            step: step,
+            code: code,
+            endpoint: facts.endpoint || '',
+            httpStatus: Number.isInteger(facts.httpStatus) ? facts.httpStatus : null,
+            contentType: facts.contentType || '',
+            redirected: facts.redirected || '',
+            requestId: facts.requestId || '',
+            cfRay: facts.cfRay || '',
+            retryAfter: facts.retryAfter || '',
+            networkLayer: facts.networkLayer || '',
+            validationFields: facts.validationFields || '',
+            elapsedMs: Number.isFinite(facts.elapsedMs) ? Math.round(facts.elapsedMs) : null
+        };
+        return error;
+    }
+
+    function responseFacts(response, endpoint, startedAt) {
+        const rawHeaders = String(response?.responseHeaders || '');
+        const headers = rawHeaders.split(/\r?\n/);
+        function header(name) {
+            const prefix = name.toLowerCase() + ':';
+            const entry = headers.find(line => line.toLowerCase().startsWith(prefix));
+            return entry ? entry.slice(prefix.length).trim() : '';
+        }
+        const rawType = header('content-type').toLowerCase();
+        const contentType = rawType.includes('json') ? 'JSON' :
+            rawType.includes('html') ? 'HTML' :
+            rawType.includes('text/plain') ? 'Plain text' :
+            rawType ? 'Other' : 'Not provided';
+        const serverHeader = header('server').toLowerCase();
+        const networkLayer = serverHeader.includes('cloudflare') ? 'Cloudflare' :
+            /openresty|nginx/.test(serverHeader) ? 'Nginx/OpenResty' :
+            serverHeader.includes('apache') ? 'Apache' : 'Not identified';
+        const requestId = header('x-request-id');
+        const cfRay = header('cf-ray');
+        const retryAfter = header('retry-after');
+        let redirected = 'Unknown';
+        if (typeof response?.finalUrl === 'string' && response.finalUrl) {
+            try {
+                const final = new URL(response.finalUrl);
+                const expected = new URL(PW_BASE + endpoint);
+                redirected = final.origin === expected.origin &&
+                    final.pathname === expected.pathname ? 'No' : 'Yes';
+            } catch (_) {
+                redirected = 'Unknown';
+            }
+        }
+        return {
+            endpoint: 'POST ' + endpoint,
+            httpStatus: Number.isInteger(response?.status) ? response.status : null,
+            contentType: contentType,
+            redirected: redirected,
+            // Only fixed-format IDs are accepted. Never print arbitrary headers.
+            requestId: /^[a-zA-Z0-9_-]{1,80}$/.test(requestId) ? requestId : '',
+            cfRay: /^[a-zA-Z0-9-]{1,80}$/.test(cfRay) ? cfRay : '',
+            retryAfter: /^\d{1,5}$/.test(retryAfter) ? retryAfter : '',
+            networkLayer: networkLayer,
+            elapsedMs: Date.now() - startedAt
+        };
+    }
+
+    function knownValidationFields(response) {
+        // The Rails error body can echo submitted secrets. Inspect ONLY field names.
+        const allowed = new Set([
+            'length', 'count', 'kind', 'payload', 'passphrase', 'charset',
+            'uppercase', 'lowercase', 'digits', 'symbols', 'min_digits',
+            'min_symbols', 'expire_after_days', 'expire_after_views',
+            'retrieval_step'
+        ]);
+        let body = response?.response;
+        if (!body || typeof body !== 'object') {
+            try { body = JSON.parse(response?.responseText || ''); }
+            catch (_) { return ''; }
+        }
+        if (!body || typeof body !== 'object' || Array.isArray(body)) return '';
+        return Object.keys(body).filter(key => allowed.has(key)).slice(0, 8).join(', ');
+    }
+
+    function httpFailure(step, path, response, facts) {
+        const status = facts.httpStatus;
+        let explanation;
+        switch (status) {
+            case 400:
+            case 422:
+                explanation = 'PWPush rejected the request settings. Check password rules, expiration limits, and server policy.';
+                break;
+            case 401:
+                explanation = 'Authentication was rejected by PWPush or a security layer. The key may be invalid, or the cross-site request may be treated differently from a direct test.';
+                break;
+            case 403:
+                explanation = 'Access was forbidden. Check PWPush permissions and reverse-proxy, Authentik, or other security rules.';
+                break;
+            case 404:
+                explanation = 'The PWPush API endpoint was not found. Check the server version and proxy routing.';
+                break;
+            case 405:
+                explanation = 'The POST method was not allowed. Check reverse-proxy routing and access restrictions.';
+                break;
+            case 408:
+                explanation = 'The server timed out handling the request.';
+                break;
+            case 413:
+                explanation = 'The server rejected the request size. Check proxy body-size limits.';
+                break;
+            case 415:
+                explanation = 'The server rejected the request format or Content-Type.';
+                break;
+            case 429:
+                explanation = 'Rate limit reached. Wait before trying again.';
+                if (facts.retryAfter) explanation += ' Suggested wait: ' + facts.retryAfter + ' seconds.';
+                break;
+            case 500:
+                explanation = 'PWPush or an upstream service reported an internal error. Check container logs.';
+                break;
+            case 502:
+            case 503:
+            case 504:
+                explanation = 'The service or upstream may be unavailable. Check PWPush and Nginx Proxy Manager health/logs.';
+                break;
+            default:
+                explanation = status >= 500
+                    ? 'A server or proxy error occurred. Check PWPush and proxy logs.'
+                    : 'The request was refused. Check PWPush and proxy logs for the corresponding time.';
+        }
+        const details = { ...facts };
+        if (status === 400 || status === 422) {
+            details.validationFields = knownValidationFields(response);
+        }
+        return diagnosticError(step, 'HTTP_' + (status ?? 'UNKNOWN'),
+            step + ' failed (HTTP ' + (status ?? 'unknown') + '). ' + explanation, details);
+    }
+
+    function formatDiagnostic(error, fallbackStep) {
+        const d = error?.safeDiagnostic || { step: fallbackStep, code: 'UNEXPECTED_ERROR' };
+        const lines = [
+            'Syncro PWPush Password Generator v' + SCRIPT_VERSION,
+            'Time (UTC): ' + new Date().toISOString(),
+            'Step: ' + (d.step || fallbackStep),
+            'Failure code: ' + (d.code || 'UNEXPECTED_ERROR')
+        ];
+        if (d.endpoint) lines.push('Endpoint: ' + d.endpoint);
+        if (d.httpStatus !== undefined && d.httpStatus !== null) lines.push('HTTP status: ' + d.httpStatus);
+        if (d.contentType) lines.push('Response type: ' + d.contentType);
+        if (d.redirected) lines.push('Redirect detected: ' + d.redirected);
+        if (d.networkLayer) lines.push('Reported server: ' + d.networkLayer);
+        if (d.requestId) lines.push('X-Request-ID: ' + d.requestId);
+        if (d.cfRay) lines.push('CF-Ray: ' + d.cfRay);
+        if (d.retryAfter) lines.push('Retry-After (seconds): ' + d.retryAfter);
+        if (d.validationFields) lines.push('Validation field names: ' + d.validationFields);
+        if (d.elapsedMs !== undefined && d.elapsedMs !== null) lines.push('Elapsed: ' + d.elapsedMs + ' ms');
+        lines.push('Secrets, response bodies, and sharing links: omitted');
+        return lines.join('\n');
+    }
+
     async function readApiToken() {
         const path = '/customers/' + CUSTOMER_ID;
-        const response = await fetch(path, {
-            credentials: 'same-origin',
-            cache: 'no-store',
-            headers: { Accept: 'text/html' }
-        });
-        const returnedUrl = new URL(response.url);
-        if (!response.ok || returnedUrl.origin !== location.origin || returnedUrl.pathname !== path) {
-            throw new Error('Could not open the configured customer record. Check your Syncro session and permissions.');
+        const step = 'Read Syncro customer API key';
+        let response;
+        try {
+            response = await fetch(path, {
+                credentials: 'same-origin',
+                cache: 'no-store',
+                headers: { Accept: 'text/html' }
+            });
+        } catch (_) {
+            throw diagnosticError(step, 'SYNCRO_NETWORK',
+                'Syncro customer lookup failed before receiving an HTTP response. Check the connection and your Syncro session.',
+                {endpoint: 'GET /customers/{configured customer ID}'});
         }
-        const doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+        let correctPage = false;
+        try {
+            const returnedUrl = new URL(response.url);
+            correctPage = returnedUrl.origin === location.origin && returnedUrl.pathname === path;
+        } catch (_) {
+            // Redirect or unexpected response.
+        }
+        if (!response.ok || !correctPage) {
+            const status = Number.isInteger(response.status) ? response.status : null;
+            const reason = !correctPage
+                ? 'Syncro returned a different page (possibly a sign-in redirect). Sign in and verify customer access.'
+                : 'Syncro refused the customer request. Check your session and permissions.';
+            throw diagnosticError(step, 'SYNCRO_HTTP_OR_REDIRECT', reason, {
+                endpoint: 'GET /customers/{configured customer ID}', httpStatus: status,
+                redirected: correctPage ? 'No' : 'Yes'
+            });
+        }
+        let doc;
+        try {
+            doc = new DOMParser().parseFromString(await response.text(), 'text/html');
+        } catch (_) {
+            throw diagnosticError(step, 'SYNCRO_INVALID_HTML',
+                'Could not read the Syncro customer page. Retry after refreshing Syncro.',
+                {endpoint: 'GET /customers/{configured customer ID}', httpStatus: response.status});
+        }
         const token = fieldFromHtmlDocument(doc);
         if (!token) {
-            throw new Error('The configured API key field was not readable from the customer page.');
+            throw diagnosticError(step, 'SYNCRO_FIELD_NOT_FOUND',
+                'The configured API key field is missing or empty on the customer page. Check the field name and your access.',
+                {endpoint: 'GET /customers/{configured customer ID}', httpStatus: response.status});
         }
         return token;
     }
 
     function pwpushPost(path, payload, token) {
         if (!['/api/v2/generate', '/api/v2/pushes'].includes(path)) {
-            return Promise.reject(new Error('Unsupported PWPush API request.'));
+            return Promise.reject(diagnosticError('PWPush API', 'UNSUPPORTED_ENDPOINT',
+                'Unsupported PWPush API request.'));
         }
+        const step = path === '/api/v2/generate' ? 'Generate password' : 'Create secure sharing link';
+        const startedAt = Date.now();
+        const endpoint = 'POST ' + path;
+        const waitHint = path === '/api/v2/pushes'
+            ? ' The server might have created a link even without returning its URL; this script will not retry automatically.'
+            : '';
+        const safeNetworkFacts = () => ({
+            endpoint: endpoint, elapsedMs: Date.now() - startedAt
+        });
         return new Promise((resolve, reject) => {
-            GM_xmlhttpRequest({
-                method: 'POST',
-                url: PW_BASE + path,
-                timeout: 20000,
-                responseType: 'json',
-                headers: {
-                    Authorization: 'Bearer ' + token,
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json'
-                },
-                data: JSON.stringify(payload),
-                onload(response) {
-                    if ([401, 403].includes(response.status)) {
-                        reject(new Error('PWPush rejected the API token. The fake Syncro key must be replaced with a real token before testing.'));
-                        return;
-                    }
-                    if (response.status === 429) {
-                        reject(new Error('PWPush rate limit reached. Try again shortly.'));
-                        return;
-                    }
-                    if (response.status < 200 || response.status >= 300) {
-                        reject(new Error('PWPush returned HTTP ' + response.status + '.'));
-                        return;
-                    }
-                    try {
-                        const result = typeof response.response === 'string'
-                            ? JSON.parse(response.response)
-                            : response.response || JSON.parse(response.responseText);
+            try {
+                GM_xmlhttpRequest({
+                    method: 'POST',
+                    url: PW_BASE + path,
+                    timeout: 20000,
+                    responseType: 'json',
+                    headers: {
+                        Authorization: 'Bearer ' + token,
+                        'Content-Type': 'application/json',
+                        Accept: 'application/json'
+                    },
+                    data: JSON.stringify(payload),
+                    onload(response) {
+                        const facts = responseFacts(response, path, startedAt);
+                        if (facts.redirected === 'Yes' && facts.httpStatus >= 200 && facts.httpStatus < 300) {
+                            reject(diagnosticError(step, 'UNEXPECTED_REDIRECT',
+                                step + ' was redirected away from the PWPush endpoint. Check proxy authentication or routing.',
+                                facts));
+                            return;
+                        }
+                        if (!facts.httpStatus || facts.httpStatus < 200 || facts.httpStatus >= 300) {
+                            reject(httpFailure(step, path, response, facts));
+                            return;
+                        }
+                        let result;
+                        try {
+                            if (response.response && typeof response.response === 'object') {
+                                result = response.response;
+                            } else if (typeof response.response === 'string' && response.response.trim()) {
+                                result = JSON.parse(response.response);
+                            } else {
+                                result = JSON.parse(response.responseText || '');
+                            }
+                        } catch (_) {
+                            // Do not expose HTML or JSON error bodies that could include secrets.
+                        }
+                        if (!result || typeof result !== 'object' || Array.isArray(result)) {
+                            reject(diagnosticError(step, 'INVALID_API_RESPONSE',
+                                step + ' returned HTTP ' + facts.httpStatus +
+                                ' but no valid JSON object. A login page or proxy challenge may be intercepting the request.',
+                                facts));
+                            return;
+                        }
                         resolve(result);
-                    } catch (_) {
-                        reject(new Error('PWPush returned invalid JSON.'));
+                    },
+                    ontimeout() {
+                        reject(diagnosticError(step, 'REQUEST_TIMEOUT',
+                            step + ' timed out after 20 seconds. Check server/network availability.' + waitHint,
+                            safeNetworkFacts()));
+                    },
+                    onerror() {
+                        reject(diagnosticError(step, 'NETWORK_ERROR',
+                            step + ' failed before a usable HTTP response. Check DNS, TLS, the proxy, and browser-extension permissions.' + waitHint,
+                            safeNetworkFacts()));
+                    },
+                    onabort() {
+                        reject(diagnosticError(step, 'REQUEST_ABORTED',
+                            step + ' was aborted before completion.' + waitHint,
+                            safeNetworkFacts()));
                     }
-                },
-                ontimeout() { reject(new Error('Timed out waiting for PWPush.')); },
-                onerror() { reject(new Error('Unable to reach ' + PW_HOST + '.')); }
-            });
+                });
+            } catch (_) {
+                reject(diagnosticError(step, 'REQUEST_SETUP_FAILED',
+                    'The browser could not start the PWPush API request. Check Tampermonkey and @connect permissions.',
+                    safeNetworkFacts()));
+            }
         });
     }
 
