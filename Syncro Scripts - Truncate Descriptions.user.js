@@ -3,7 +3,7 @@
 // @namespace    https://texomans.com/
 // @version      1.0.0
 // @description  Collapses script descriptions to one line with individual expand/collapse buttons for overflowing text.
-// @match        https://*.syncromsp.com/*
+// @match        https://*.syncromsp.com/scripts*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Scripts%20-%20Truncate%20Descriptions.user.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Scripts%20-%20Truncate%20Descriptions.user.js
 // @run-at       document-idle
