@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Scripts - Expandable Descriptions
 // @namespace    https://texomans.com/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Collapses script descriptions to one line with individual expand/collapse buttons for overflowing text.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Scripts%20-%20Truncate%20Descriptions.user.js
