@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - HTML Content Dark Mode
 // @namespace    https://texomans.com/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Darkens incoming HTML content in Syncro Tickets and Leads.
 // @match        https://*.syncromsp.com/tickets/*
 // @match        https://*.syncromsp.com/leads/*
@@ -26,6 +26,10 @@
     style.textContent = `
         ${root} {
             background: #262a30 !important;
+            border: 1px solid #383d44 !important;
+            border-radius: 4px !important;
+            padding: 6px 10px !important;
+            box-sizing: border-box !important;
             color: #e5e7eb !important;
             color-scheme: dark;
         }
