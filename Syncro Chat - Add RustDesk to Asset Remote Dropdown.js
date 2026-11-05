@@ -15,7 +15,7 @@
   'use strict';
 
   const RUSTDESK_ITEM_ATTR = 'data-tns-rustdesk-chat-menu-item';
-  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 3000;
+  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 1000;
 
   const rustDeskLinkCache = new Map();
 
