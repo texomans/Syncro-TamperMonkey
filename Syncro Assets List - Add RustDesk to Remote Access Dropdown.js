@@ -17,7 +17,7 @@
     'data-tns-rustdesk-assets-index-menu-item';
 
   const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY =
-    3000;
+    1000;
 
   function isAssetsIndexPage() {
     return (
