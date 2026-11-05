@@ -26,7 +26,7 @@
     'data-tns-rustdesk-direct-group';
 
   const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY =
-    3000;
+    1000;
 
   function normalizeUrl(value) {
     const trimmed =
