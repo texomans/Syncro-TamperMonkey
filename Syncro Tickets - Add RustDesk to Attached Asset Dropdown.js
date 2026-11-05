@@ -20,7 +20,7 @@
     'a[href*="/customer_assets/"]';
 
   const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY =
-    3000;
+    1000;
 
   const assetLinkCache =
     new Map();
