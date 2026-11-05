@@ -1,8 +1,10 @@
 // ==UserScript==
 // @name         Syncro - WAV Download Fix
 // @namespace    https://texomans.com/
-// @version      1.1.2
+// @version      1.1.3
 // @description  Save Syncro WAV attachments with the correct audio type and .wav extension.
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20WAV%20Download%20Fix.user.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20WAV%20Download%20Fix.user.js
 // @match        https://texomans.shield.syncromsp.com/*
 // @grant        GM_registerMenuCommand
 // @run-at       document-start
