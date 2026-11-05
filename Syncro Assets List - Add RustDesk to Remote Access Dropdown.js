@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro Assets List - Add RustDesk to Remote Access Dropdown
 // @namespace    https://texomans.com/
-// @version      1.0.6
+// @version      1.0.7
 // @description  Adds RustDesk to each asset row's Remote Access dropdown on the Syncro assets list page and automatically closes the temporary RustDesk launch tab.
 // @match        https://*.syncromsp.com/customer_assets*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20List%20-%20Add%20RustDesk%20to%20Remote%20Access%20Dropdown.js
@@ -17,7 +17,7 @@
     'data-tns-rustdesk-assets-index-menu-item';
 
   const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY =
-    3000;
+    1000;
 
   function isAssetsIndexPage() {
     return (
