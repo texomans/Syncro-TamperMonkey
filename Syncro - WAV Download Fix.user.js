@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         TNS Syncro WAV Download Fix
+// @name         Syncro - WAV Download Fix
 // @namespace    https://texomans.com/
-// @version      1.1.1
+// @version      1.1.2
 // @description  Save Syncro WAV attachments with the correct audio type and .wav extension.
 // @match        https://texomans.shield.syncromsp.com/*
 // @grant        GM_registerMenuCommand
