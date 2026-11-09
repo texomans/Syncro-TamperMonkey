@@ -4,8 +4,8 @@
 // @version      2.0.2
 // @description  RustDesk controls for asset details, Assets & RMM, tickets, chat, Customers asset tables, and RMM Alerts.
 // @match        https://*.syncromsp.com/*
-// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro-RustDesk-Remote-Access.user.js
-// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro-RustDesk-Remote-Access.user.js
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20RustDesk%20Remote%20Access.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20RustDesk%20Remote%20Access.js
 // @run-at       document-idle
 // @grant        GM_openInTab
 // ==/UserScript==
