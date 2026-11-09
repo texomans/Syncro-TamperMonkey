@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - RustDesk Remote Access
 // @namespace    https://texomans.com/
-// @version      2.0.1
+// @version      2.0.2
 // @description  RustDesk controls for asset details, Assets & RMM, tickets, chat, Customers asset tables, and RMM Alerts.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro-RustDesk-Remote-Access.user.js
