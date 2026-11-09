@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro - RustDesk Remote Access
 // @namespace    https://texomans.com/
-// @version      2.0.0
-// @description  RustDesk controls for asset details, Assets & RMM, tickets, chat, and Customers asset tables.
+// @version      2.0.1
+// @description  RustDesk controls for asset details, Assets & RMM, tickets, chat, Customers asset tables, and RMM Alerts.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro-RustDesk-Remote-Access.user.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro-RustDesk-Remote-Access.user.js
@@ -1807,7 +1807,7 @@ function findAssetPanel(assetLink, assetId) {
 
   })();
 
-  const ticketAndCustomerPages = (function () {
+  const ticketPages = (function () {
 
     function openRustDeskLaunchPage(url) {
       launchRustDesk(url, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
@@ -1836,17 +1836,6 @@ function getNameCell(
   function getRemoteCell(
     assetLink
   ) {
-    // Customer asset tables can have an extra icon column. Prefer the Remote header.
-    if (/^\/customers\//.test(location.pathname)) {
-      const row = assetLink.closest('tr');
-      const table = row?.closest('table');
-      const headers = table?.querySelectorAll('thead tr:last-child th, thead tr:last-child td');
-      const remoteIndex = Array.from(headers || []).findIndex((cell) =>
-        /^remote(?:\s+access)?$/i.test(cell.textContent.trim())
-      );
-      if (remoteIndex >= 0 && row.cells[remoteIndex]) return row.cells[remoteIndex];
-    }
-
     const nameCell =
       getNameCell(
         assetLink
@@ -2167,7 +2156,7 @@ function getNameCell(
   let pending = false;
 
   function scheduleProcessAttachedAssets() {
-    if (!(/^\/(?:tickets|customers)\/\d+\/?$/.test(location.pathname))) return;
+    if (!(/^\/tickets\/\d+\/?$/.test(location.pathname))) return;
     if (pending) {
       return;
     }
@@ -2176,7 +2165,7 @@ function getNameCell(
 
     window.setTimeout(() => {
       pending = false;
-      if (!(/^\/(?:tickets|customers)\/\d+\/?$/.test(location.pathname))) return;
+      if (!(/^\/tickets\/\d+\/?$/.test(location.pathname))) return;
 
       processAttachedAssets();
     }, 500);
@@ -2186,12 +2175,122 @@ function getNameCell(
 
   })();
 
+  // Customer asset tables and alert rows use compact remote controls rather than
+  // the ticket page's dropdown layout. Keep each row independent: several alerts
+  // can refer to the same asset, and Syncro can replace/rebind rows in place.
+  const customerAndAlertTables = (function () {
+    const BUTTON_ATTR = 'data-tns-rustdesk-table-button';
+    let pending = false;
+
+    function isSupportedPage() {
+      return /^\/customers\/\d+\/?$/.test(location.pathname) ||
+        /^\/rmm_alerts(?:\/|$)/.test(location.pathname);
+    }
+
+    function getRowAsset(row) {
+      for (const anchor of row.querySelectorAll('a[href]')) {
+        try {
+          const url = new URL(anchor.getAttribute('href'), window.location.origin);
+          if (url.origin !== window.location.origin) continue;
+          const match = url.pathname.match(/^\/customer_assets\/(\d+)(?:\/remote_access)?\/?$/);
+          if (match) return { id: match[1], url: `${url.origin}/customer_assets/${match[1]}` };
+        } catch { /* Ignore non-URL controls. */ }
+      }
+      const id = row.getAttribute('data-asset-id') ||
+        row.getAttribute('data-testid')?.match(/^asset-row-(\d+)$/)?.[1];
+      return /^\d+$/.test(id || '') ?
+        { id, url: `${window.location.origin}/customer_assets/${id}` } : null;
+    }
+
+    function getRemoteCell(row, assetId) {
+      const cells = Array.from(row.children).filter(cell => cell.matches('td, th, [role="cell"]'));
+      // Match the actual control before relying on column positions. An icon
+      // column may be separate even though the Name header spans both columns.
+      const remoteControl = row.querySelector(
+        `a[href*="/customer_assets/${assetId}/remote_access"], .btn-remote-access`
+      ) || Array.from(row.querySelectorAll('a, button')).find(control =>
+        /remote access/i.test([
+          control.textContent, control.getAttribute('title'),
+          control.getAttribute('data-original-title'), control.getAttribute('aria-label')
+        ].join(' '))
+      );
+      if (remoteControl) {
+        const cell = remoteControl.closest('td, [role="cell"]');
+        if (cell && cells.includes(cell)) return cell;
+      }
+      const table = row.closest('table');
+      for (const headerRow of table?.querySelectorAll('tr') || []) {
+        if (headerRow.closest('table') !== table || headerRow === row) continue;
+        const headers = Array.from(headerRow.children).filter(cell => cell.matches('th, td'));
+        let column = 0;
+        for (const header of headers) {
+          if (/^remote(?:\s+access)?$/i.test(header.textContent.trim())) {
+            let cellColumn = 0;
+            for (const cell of cells) {
+              const width = Number(cell.getAttribute('colspan')) || 1;
+              if (column >= cellColumn && column < cellColumn + width) return cell;
+              cellColumn += width;
+            }
+          }
+          column += Number(header.getAttribute('colspan')) || 1;
+        }
+      }
+      return null;
+    }
+
+    async function processRows() {
+      const pagePath = location.pathname;
+      for (const row of document.querySelectorAll('table tr')) {
+        if (!isSupportedPage() || location.pathname !== pagePath) return;
+        const asset = getRowAsset(row);
+        if (!asset) continue;
+        const remoteCell = getRemoteCell(row, asset.id);
+        if (!remoteCell) continue;
+        const rustDeskUrl = getRustDeskLinkFromAssetDocument(row) ||
+          await fetchRustDeskLinkFromAsset(asset.url);
+        // A slow lookup must not attach the previous asset's link to a reused row.
+        if (!row.isConnected || location.pathname !== pagePath ||
+            getRowAsset(row)?.id !== asset.id || getRemoteCell(row, asset.id) !== remoteCell) continue;
+        remoteCell.querySelectorAll(`[${BUTTON_ATTR}]`).forEach(button => button.remove());
+        if (!rustDeskUrl) continue;
+        const button = document.createElement('a');
+        button.className = 'btn btn-default btn-sm';
+        button.setAttribute(BUTTON_ATTR, asset.id);
+        button.href = rustDeskUrl;
+        button.target = '_blank';
+        button.rel = 'noopener noreferrer';
+        button.textContent = 'RustDesk';
+        button.title = 'Connect with RustDesk';
+        button.style.marginLeft = '4px';
+        button.addEventListener('click', event => {
+          if (shouldUseNativeNavigation(event)) return;
+          event.preventDefault();
+          launchRustDesk(button.href, 1000);
+        });
+        remoteCell.appendChild(button);
+      }
+    }
+
+    function schedule() {
+      if (!isSupportedPage() || pending) return;
+      pending = true;
+      window.setTimeout(() => {
+        pending = false;
+        if (isSupportedPage()) processRows().catch(error =>
+          console.warn('[RustDesk Tables] Could not update remote controls:', error)
+        );
+      }, 500);
+    }
+    return schedule;
+  })();
+
   // One observer schedules the relevant page adapter after dynamic replacements.
   function schedulePageUpdate() {
     assetDetailsPage();
     assetListPage();
     chatPages();
-    ticketAndCustomerPages();
+    ticketPages();
+    customerAndAlertTables();
   }
 
   schedulePageUpdate();
