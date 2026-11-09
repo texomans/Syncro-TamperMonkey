@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - RustDesk Remote Access
 // @namespace    https://texomans.com/
-// @version      2.0.2
+// @version      2.0.3
 // @description  RustDesk controls for asset details, Assets & RMM, tickets, chat, Customers asset tables, and RMM Alerts.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20RustDesk%20Remote%20Access.js
@@ -10,16 +10,26 @@
 // @grant        GM_openInTab
 // ==/UserScript==
 
+// Original handler: Syncro Asset - Add RustDesk Remote Access Button.js
 (function () {
   'use strict';
 
-  // Shared lookup cache and launch behavior for all page adapters.
-  const assetLinkCache = new Map();
+  const RUSTDESK_ITEM_ATTR =
+    'data-tns-rustdesk-menu-item';
 
-  function normalizeUrl(
-    value,
-    base = window.location.origin
-  ) {
+  const RUSTDESK_DROPDOWN_ATTR =
+    'data-tns-rustdesk-remote-dropdown';
+
+  const RUSTDESK_DIRECT_ATTR =
+    'data-tns-rustdesk-direct-button';
+
+  const RUSTDESK_DIRECT_GROUP_ATTR =
+    'data-tns-rustdesk-direct-group';
+
+  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY =
+    1000;
+
+  function normalizeUrl(value) {
     const trimmed =
       (value || '').trim();
 
@@ -28,8 +38,20 @@
     }
 
     try {
-      const parsed = new URL(trimmed, base);
-      return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+      const url =
+        new URL(
+          trimmed,
+          window.location.origin
+        );
+
+      if (
+        url.protocol !== 'http:' &&
+        url.protocol !== 'https:'
+      ) {
+        return '';
+      }
+
+      return url.href;
     } catch {
       return '';
     }
@@ -70,278 +92,8 @@
     );
   }
 
-  function decodeHtml(value) {
-    const textarea =
-      document.createElement(
-        'textarea'
-      );
-
-    textarea.innerHTML =
-      value ||
-      '';
-
-    return textarea.value;
-  }
-
-  function getAssetIdFromUrl(url) {
-    try {
-      const parsed =
-        new URL(
-          url,
-          window.location.origin
-        );
-
-      const match =
-        parsed.pathname.match(
-          /^\/customer_assets\/(\d+)\/?$/
-        );
-
-      return (
-        match ?
-          match[1] :
-          ''
-      );
-    } catch {
-      return '';
-    }
-  }
-
-  function isAssetViewLink(anchor) {
-    if (!anchor?.href) {
-      return false;
-    }
-
-    try {
-      const url =
-        new URL(
-          anchor.href,
-          window.location.origin
-        );
-
-      return (
-        /^\/customer_assets\/\d+\/?$/.test(
-          url.pathname
-        )
-      );
-    } catch {
-      return false;
-    }
-  }
-
-  function findValueByKey(
-    object,
-    targetKey
-  ) {
-    if (
-      !object ||
-      typeof object !== 'object'
-    ) {
-      return '';
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(
-        object,
-        targetKey
-      )
-    ) {
-      return (
-        object[targetKey] ||
-        ''
-      );
-    }
-
-    for (
-      const value of
-      Object.values(object)
-    ) {
-      const found =
-        findValueByKey(
-          value,
-          targetKey
-        );
-
-      if (found) {
-        return found;
-      }
-    }
-
-    return '';
-  }
-
-  function getRustDeskLinkFromAssetDocument(
-    assetDoc,
-    rawHtml = ''
-  ) {
-    const fieldCell =
-      assetDoc.querySelector(
-        'td[data-testid="RustDesk Link"]'
-      );
-
-    if (fieldCell) {
-      const anchor =
-        fieldCell.querySelector(
-          'a[href]'
-        );
-
-      if (anchor?.href) {
-        return normalizeUrl(
-          anchor.href
-        );
-      }
-
-      const textUrl =
-        normalizeUrl(
-          fieldCell.textContent
-        );
-
-      if (textUrl) {
-        return textUrl;
-      }
-    }
-
-    const propNodes =
-      assetDoc.querySelectorAll(
-        '[data-react-props], [data-props]'
-      );
-
-    for (
-      const node of
-      propNodes
-    ) {
-      const raw =
-        node.getAttribute(
-          'data-react-props'
-        ) ||
-        node.getAttribute(
-          'data-props'
-        ) ||
-        '';
-
-      if (
-        !raw.includes(
-          'RustDesk Link'
-        )
-      ) {
-        continue;
-      }
-
-      try {
-        const props =
-          JSON.parse(raw);
-
-        const found =
-          normalizeUrl(
-            findValueByKey(
-              props,
-              'RustDesk Link'
-            )
-          );
-
-        if (found) {
-          return found;
-        }
-      } catch {
-        // Ignore invalid JSON blocks.
-      }
-    }
-
-    const regexMatch =
-      rawHtml.match(
-        /(?:&quot;|")RustDesk Link(?:&quot;|")\s*:?\s*(?:&quot;|")([^"&]+)(?:&quot;|")/
-      );
-
-    if (
-      regexMatch?.[1]
-    ) {
-      return normalizeUrl(
-        decodeHtml(
-          regexMatch[1]
-        )
-      );
-    }
-
-    return '';
-  }
-
-  async function fetchRustDeskLinkFromAsset(
-    assetUrl
-  ) {
-    const normalizedAssetUrl =
-      normalizeUrl(
-        assetUrl
-      );
-
-    if (!normalizedAssetUrl) {
-      return '';
-    }
-
-    if (
-      assetLinkCache.has(
-        normalizedAssetUrl
-      )
-    ) {
-      return await assetLinkCache.get(
-        normalizedAssetUrl
-      );
-    }
-
-    const promise =
-      fetch(
-        normalizedAssetUrl,
-        {
-          method: 'GET',
-          credentials:
-            'same-origin'
-        }
-      )
-        .then(
-          async (response) => {
-            if (
-              !response.ok
-            ) {
-              throw new Error(
-                `Asset page returned HTTP ${response.status}`
-              );
-            }
-
-            const html =
-              await response.text();
-
-            const assetDoc =
-              new DOMParser().parseFromString(
-                html,
-                'text/html'
-              );
-
-            return getRustDeskLinkFromAssetDocument(
-              assetDoc,
-              html
-            );
-          }
-        )
-        .catch(
-          (error) => {
-            console.warn(
-              '[RustDesk Ticket Button] Could not fetch asset page:',
-              normalizedAssetUrl,
-              error
-            );
-
-            return '';
-          }
-        );
-
-    assetLinkCache.set(
-      normalizedAssetUrl,
-      promise
-    );
-
-    return await promise;
-  }
-
-  function launchRustDesk(
-    rustDeskUrl, closeDelay
+  function openRustDeskLaunchPage(
+    rustDeskUrl
   ) {
     let launchTab;
 
@@ -357,7 +109,7 @@
         );
     } catch (error) {
       console.warn(
-        '[RustDesk Ticket Button] Could not open RustDesk launch tab:',
+        '[RustDesk Asset Button] Could not open RustDesk launch tab:',
         error
       );
 
@@ -369,36 +121,12 @@
         launchTab?.close();
       } catch (error) {
         console.warn(
-          '[RustDesk Ticket Button] Could not automatically close launch tab:',
+          '[RustDesk Asset Button] Could not automatically close launch tab:',
           error
         );
       }
-    }, closeDelay);
+    }, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
   }
-
-  const assetDetailsPage = (function () {
-
-    function openRustDeskLaunchPage(url) {
-      launchRustDesk(url, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
-    }
-
-    // Rebuild controls after Syncro redraws, retaining the original adapter behavior.
-
-
-  const RUSTDESK_ITEM_ATTR =
-    'data-tns-rustdesk-menu-item';
-
-  const RUSTDESK_DROPDOWN_ATTR =
-    'data-tns-rustdesk-remote-dropdown';
-
-  const RUSTDESK_DIRECT_ATTR =
-    'data-tns-rustdesk-direct-button';
-
-  const RUSTDESK_DIRECT_GROUP_ATTR =
-    'data-tns-rustdesk-direct-group';
-
-  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY =
-    1000;
 
   function getRustDeskLinkFromCustomField() {
     const fieldCell =
@@ -996,6 +724,7 @@
   }
 
   function updateRustDeskControls() {
+    if (!/^\/customer_assets\/\d+\/?$/.test(location.pathname)) return;
     const rustDeskUrl =
       getRustDeskLink();
 
@@ -1023,7 +752,6 @@
   let pending = false;
 
   function scheduleUpdate() {
-    if (!(/^\/customer_assets\/\d+\/?$/.test(location.pathname))) return;
     if (pending) {
       return;
     }
@@ -1032,24 +760,35 @@
 
     window.setTimeout(() => {
       pending = false;
-      if (!(/^\/customer_assets\/\d+\/?$/.test(location.pathname))) return;
 
       updateRustDeskControls();
     }, 250);
   }
 
-  return scheduleUpdate;
+  scheduleUpdate();
 
-  })();
+  window.addEventListener(
+    'load',
+    scheduleUpdate
+  );
 
-  const assetListPage = (function () {
+  const observer =
+    new MutationObserver(
+      scheduleUpdate
+    );
 
-    function openRustDeskLaunchPage(url) {
-      launchRustDesk(url, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
+  observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
     }
+  );
+})();
 
-    // Rebuild controls after Syncro redraws, retaining the original adapter behavior.
-
+// Original handler: Syncro Assets List - Add RustDesk to Remote Access Dropdown.js
+(function () {
+  'use strict';
 
   const RUSTDESK_ITEM_ATTR =
     'data-tns-rustdesk-assets-index-menu-item';
@@ -1065,6 +804,139 @@
         'table[data-testid="assets-table"]'
       )
     );
+  }
+
+  function normalizeUrl(
+    value,
+    base = window.location.origin
+  ) {
+    const trimmed =
+      (value || '').trim();
+
+    if (!trimmed) {
+      return '';
+    }
+
+    try {
+      return new URL(
+        trimmed,
+        base
+      ).href;
+    } catch {
+      return '';
+    }
+  }
+
+  function isMobileLikeDevice() {
+    if (
+      navigator.userAgentData?.mobile ===
+      true
+    ) {
+      return true;
+    }
+
+    if (
+      /Android|iPhone|iPad|iPod|Mobile/i.test(
+        navigator.userAgent
+      )
+    ) {
+      return true;
+    }
+
+    return (
+      navigator.maxTouchPoints > 0 &&
+      window.matchMedia(
+        '(pointer: coarse)'
+      ).matches
+    );
+  }
+
+  function shouldUseNativeNavigation(event) {
+    return (
+      isMobileLikeDevice() ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    );
+  }
+
+  function openRustDeskLaunchPage(
+    rustDeskUrl
+  ) {
+    let launchTab;
+
+    try {
+      launchTab =
+        GM_openInTab(
+          rustDeskUrl,
+          {
+            active: true,
+            insert: true,
+            setParent: true
+          }
+        );
+    } catch (error) {
+      console.warn(
+        '[RustDesk Assets List] Could not open RustDesk launch tab:',
+        error
+      );
+
+      return;
+    }
+
+    window.setTimeout(() => {
+      try {
+        launchTab?.close();
+      } catch (error) {
+        console.warn(
+          '[RustDesk Assets List] Could not automatically close launch tab:',
+          error
+        );
+      }
+    }, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
+  }
+
+  function findValueByKey(
+    object,
+    targetKey
+  ) {
+    if (
+      !object ||
+      typeof object !== 'object'
+    ) {
+      return '';
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        object,
+        targetKey
+      )
+    ) {
+      return (
+        object[targetKey] ||
+        ''
+      );
+    }
+
+    for (
+      const value of
+      Object.values(object)
+    ) {
+      const found =
+        findValueByKey(
+          value,
+          targetKey
+        );
+
+      if (found) {
+        return found;
+      }
+    }
+
+    return '';
   }
 
   function getAssetIdFromRow(row) {
@@ -1387,6 +1259,7 @@
   }
 
   function processAssetRows() {
+    if (!location.pathname.startsWith("/customer_assets")) return;
     if (!isAssetsIndexPage()) {
       return;
     }
@@ -1404,7 +1277,6 @@
   let pending = false;
 
   function scheduleProcessAssetRows() {
-    if (!(/^\/customer_assets\/?$/.test(location.pathname))) return;
     if (pending) {
       return;
     }
@@ -1413,29 +1285,235 @@
 
     window.setTimeout(() => {
       pending = false;
-      if (!(/^\/customer_assets\/?$/.test(location.pathname))) return;
 
       processAssetRows();
     }, 300);
   }
 
-  return scheduleProcessAssetRows;
+  scheduleProcessAssetRows();
 
-  })();
+  window.addEventListener(
+    'load',
+    scheduleProcessAssetRows
+  );
 
-  const chatPages = (function () {
+  const observer =
+    new MutationObserver(
+      scheduleProcessAssetRows
+    );
 
-    function openRustDeskLaunchPage(url) {
-      launchRustDesk(url, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
+  observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
     }
+  );
+})();
 
-    // Rebuild controls after Syncro redraws, retaining the original adapter behavior.
-
+// Original handler: Syncro Chat - Add RustDesk to Asset Remote Dropdown.js
+(function () {
+  'use strict';
 
   const RUSTDESK_ITEM_ATTR = 'data-tns-rustdesk-chat-menu-item';
   const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 3000;
 
-function findAssetPanel(assetLink, assetId) {
+  const rustDeskLinkCache = new Map();
+
+  function normalizeUrl(value, base = window.location.origin) {
+    const trimmed = (value || '').trim();
+    if (!trimmed) return '';
+
+    try {
+      return new URL(trimmed, base).href;
+    } catch {
+      return '';
+    }
+  }
+
+  function isMobileLikeDevice() {
+    if (navigator.userAgentData?.mobile === true) {
+      return true;
+    }
+
+    if (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)) {
+      return true;
+    }
+
+    return (
+      navigator.maxTouchPoints > 0 &&
+      window.matchMedia('(pointer: coarse)').matches
+    );
+  }
+
+  function shouldUseNativeNavigation(event) {
+    return (
+      isMobileLikeDevice() ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    );
+  }
+
+  function openRustDeskLaunchPage(rustDeskUrl) {
+    let launchTab;
+
+    try {
+      launchTab = GM_openInTab(rustDeskUrl, {
+        active: true,
+        insert: true,
+        setParent: true
+      });
+    } catch (error) {
+      console.warn(
+        '[RustDesk Chat Button] Could not open RustDesk launch tab:',
+        error
+      );
+
+      return;
+    }
+
+    window.setTimeout(() => {
+      try {
+        launchTab?.close();
+      } catch (error) {
+        console.warn(
+          '[RustDesk Chat Button] Could not automatically close launch tab:',
+          error
+        );
+      }
+    }, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
+  }
+
+  function getAssetIdFromUrl(url) {
+    try {
+      const parsed = new URL(url, window.location.origin);
+      const match = parsed.pathname.match(/^\/customer_assets\/(\d+)\/?$/);
+      return match ? match[1] : '';
+    } catch {
+      return '';
+    }
+  }
+
+  function isAssetViewLink(anchor) {
+    if (!anchor?.href) return false;
+    return !!getAssetIdFromUrl(anchor.href);
+  }
+
+  function findValueByKey(object, targetKey) {
+    if (!object || typeof object !== 'object') return '';
+
+    if (Object.prototype.hasOwnProperty.call(object, targetKey)) {
+      return object[targetKey] || '';
+    }
+
+    for (const value of Object.values(object)) {
+      const found = findValueByKey(value, targetKey);
+
+      if (found) return found;
+    }
+
+    return '';
+  }
+
+  function getRustDeskLinkFromAssetDocument(assetDoc) {
+    const fieldCell = assetDoc.querySelector(
+      'td[data-testid="RustDesk Link"]'
+    );
+
+    if (fieldCell) {
+      const anchor = fieldCell.querySelector('a[href]');
+
+      if (anchor?.href) {
+        return normalizeUrl(anchor.href);
+      }
+
+      const textUrl = normalizeUrl(fieldCell.textContent);
+
+      if (textUrl) {
+        return textUrl;
+      }
+    }
+
+    const propNodes = assetDoc.querySelectorAll(
+      '[data-react-props], [data-props]'
+    );
+
+    for (const node of propNodes) {
+      const raw =
+        node.getAttribute('data-react-props') ||
+        node.getAttribute('data-props') ||
+        '';
+
+      if (!raw.includes('RustDesk Link')) {
+        continue;
+      }
+
+      try {
+        const props = JSON.parse(raw);
+
+        const found = normalizeUrl(
+          findValueByKey(props, 'RustDesk Link')
+        );
+
+        if (found) {
+          return found;
+        }
+      } catch {
+        // Ignore invalid JSON blocks.
+      }
+    }
+
+    return '';
+  }
+
+  async function fetchRustDeskLinkFromAsset(assetUrl) {
+    const normalizedAssetUrl = normalizeUrl(assetUrl);
+
+    if (!normalizedAssetUrl) {
+      return '';
+    }
+
+    if (rustDeskLinkCache.has(normalizedAssetUrl)) {
+      return await rustDeskLinkCache.get(normalizedAssetUrl);
+    }
+
+    const promise = fetch(normalizedAssetUrl, {
+      method: 'GET',
+      credentials: 'same-origin'
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Asset page returned HTTP ${response.status}`);
+        }
+
+        const html = await response.text();
+
+        const assetDoc = new DOMParser().parseFromString(
+          html,
+          'text/html'
+        );
+
+        return getRustDeskLinkFromAssetDocument(assetDoc);
+      })
+      .catch((error) => {
+        console.warn(
+          '[RustDesk Chat Button] Could not fetch asset page:',
+          normalizedAssetUrl,
+          error
+        );
+
+        return '';
+      });
+
+    rustDeskLinkCache.set(normalizedAssetUrl, promise);
+
+    return await promise;
+  }
+
+  function findAssetPanel(assetLink, assetId) {
     let node = assetLink.parentElement;
 
     while (node && node !== document.body) {
@@ -1788,7 +1866,6 @@ function findAssetPanel(assetLink, assetId) {
   let pending = false;
 
   function scheduleProcessChatAssetPanels() {
-    if (!(/^\/chat(?:\/|$)/.test(location.pathname))) return;
     if (pending) {
       return;
     }
@@ -1797,24 +1874,35 @@ function findAssetPanel(assetLink, assetId) {
 
     window.setTimeout(() => {
       pending = false;
-      if (!(/^\/chat(?:\/|$)/.test(location.pathname))) return;
 
       processChatAssetPanels();
     }, 600);
   }
 
-  return scheduleProcessChatAssetPanels;
+  scheduleProcessChatAssetPanels();
 
-  })();
+  window.addEventListener(
+    'load',
+    scheduleProcessChatAssetPanels
+  );
 
-  const ticketPages = (function () {
+  const observer =
+    new MutationObserver(
+      scheduleProcessChatAssetPanels
+    );
 
-    function openRustDeskLaunchPage(url) {
-      launchRustDesk(url, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
+  observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
     }
+  );
+})();
 
-    // Rebuild controls after Syncro redraws, retaining the original adapter behavior.
-
+// Original handler: Syncro Tickets - Add RustDesk to Attached Asset Dropdown.js
+(function () {
+  'use strict';
 
   const RUSTDESK_ITEM_ATTR =
     'data-tns-rustdesk-ticket-menu-item';
@@ -1825,7 +1913,372 @@ function findAssetPanel(assetLink, assetId) {
   const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY =
     1000;
 
-function getNameCell(
+  const assetLinkCache =
+    new Map();
+
+  function normalizeUrl(
+    value,
+    base = window.location.origin
+  ) {
+    const trimmed =
+      (value || '').trim();
+
+    if (!trimmed) {
+      return '';
+    }
+
+    try {
+      return new URL(
+        trimmed,
+        base
+      ).href;
+    } catch {
+      return '';
+    }
+  }
+
+  function isMobileLikeDevice() {
+    if (
+      navigator.userAgentData?.mobile ===
+      true
+    ) {
+      return true;
+    }
+
+    if (
+      /Android|iPhone|iPad|iPod|Mobile/i.test(
+        navigator.userAgent
+      )
+    ) {
+      return true;
+    }
+
+    return (
+      navigator.maxTouchPoints > 0 &&
+      window.matchMedia(
+        '(pointer: coarse)'
+      ).matches
+    );
+  }
+
+  function shouldUseNativeNavigation(event) {
+    return (
+      isMobileLikeDevice() ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    );
+  }
+
+  function openRustDeskLaunchPage(
+    rustDeskUrl
+  ) {
+    let launchTab;
+
+    try {
+      launchTab =
+        GM_openInTab(
+          rustDeskUrl,
+          {
+            active: true,
+            insert: true,
+            setParent: true
+          }
+        );
+    } catch (error) {
+      console.warn(
+        '[RustDesk Ticket Button] Could not open RustDesk launch tab:',
+        error
+      );
+
+      return;
+    }
+
+    window.setTimeout(() => {
+      try {
+        launchTab?.close();
+      } catch (error) {
+        console.warn(
+          '[RustDesk Ticket Button] Could not automatically close launch tab:',
+          error
+        );
+      }
+    }, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
+  }
+
+  function decodeHtml(value) {
+    const textarea =
+      document.createElement(
+        'textarea'
+      );
+
+    textarea.innerHTML =
+      value ||
+      '';
+
+    return textarea.value;
+  }
+
+  function getAssetIdFromUrl(url) {
+    try {
+      const parsed =
+        new URL(
+          url,
+          window.location.origin
+        );
+
+      const match =
+        parsed.pathname.match(
+          /^\/customer_assets\/(\d+)\/?$/
+        );
+
+      return (
+        match ?
+          match[1] :
+          ''
+      );
+    } catch {
+      return '';
+    }
+  }
+
+  function isAssetViewLink(anchor) {
+    if (!anchor?.href) {
+      return false;
+    }
+
+    try {
+      const url =
+        new URL(
+          anchor.href,
+          window.location.origin
+        );
+
+      return (
+        /^\/customer_assets\/\d+\/?$/.test(
+          url.pathname
+        )
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  function findValueByKey(
+    object,
+    targetKey
+  ) {
+    if (
+      !object ||
+      typeof object !== 'object'
+    ) {
+      return '';
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        object,
+        targetKey
+      )
+    ) {
+      return (
+        object[targetKey] ||
+        ''
+      );
+    }
+
+    for (
+      const value of
+      Object.values(object)
+    ) {
+      const found =
+        findValueByKey(
+          value,
+          targetKey
+        );
+
+      if (found) {
+        return found;
+      }
+    }
+
+    return '';
+  }
+
+  function getRustDeskLinkFromAssetDocument(
+    assetDoc,
+    rawHtml = ''
+  ) {
+    const fieldCell =
+      assetDoc.querySelector(
+        'td[data-testid="RustDesk Link"]'
+      );
+
+    if (fieldCell) {
+      const anchor =
+        fieldCell.querySelector(
+          'a[href]'
+        );
+
+      if (anchor?.href) {
+        return normalizeUrl(
+          anchor.href
+        );
+      }
+
+      const textUrl =
+        normalizeUrl(
+          fieldCell.textContent
+        );
+
+      if (textUrl) {
+        return textUrl;
+      }
+    }
+
+    const propNodes =
+      assetDoc.querySelectorAll(
+        '[data-react-props], [data-props]'
+      );
+
+    for (
+      const node of
+      propNodes
+    ) {
+      const raw =
+        node.getAttribute(
+          'data-react-props'
+        ) ||
+        node.getAttribute(
+          'data-props'
+        ) ||
+        '';
+
+      if (
+        !raw.includes(
+          'RustDesk Link'
+        )
+      ) {
+        continue;
+      }
+
+      try {
+        const props =
+          JSON.parse(raw);
+
+        const found =
+          normalizeUrl(
+            findValueByKey(
+              props,
+              'RustDesk Link'
+            )
+          );
+
+        if (found) {
+          return found;
+        }
+      } catch {
+        // Ignore invalid JSON blocks.
+      }
+    }
+
+    const regexMatch =
+      rawHtml.match(
+        /(?:&quot;|")RustDesk Link(?:&quot;|")\s*:?\s*(?:&quot;|")([^"&]+)(?:&quot;|")/
+      );
+
+    if (
+      regexMatch?.[1]
+    ) {
+      return normalizeUrl(
+        decodeHtml(
+          regexMatch[1]
+        )
+      );
+    }
+
+    return '';
+  }
+
+  async function fetchRustDeskLinkFromAsset(
+    assetUrl
+  ) {
+    const normalizedAssetUrl =
+      normalizeUrl(
+        assetUrl
+      );
+
+    if (!normalizedAssetUrl) {
+      return '';
+    }
+
+    if (
+      assetLinkCache.has(
+        normalizedAssetUrl
+      )
+    ) {
+      return await assetLinkCache.get(
+        normalizedAssetUrl
+      );
+    }
+
+    const promise =
+      fetch(
+        normalizedAssetUrl,
+        {
+          method: 'GET',
+          credentials:
+            'same-origin'
+        }
+      )
+        .then(
+          async (response) => {
+            if (
+              !response.ok
+            ) {
+              throw new Error(
+                `Asset page returned HTTP ${response.status}`
+              );
+            }
+
+            const html =
+              await response.text();
+
+            const assetDoc =
+              new DOMParser().parseFromString(
+                html,
+                'text/html'
+              );
+
+            return getRustDeskLinkFromAssetDocument(
+              assetDoc,
+              html
+            );
+          }
+        )
+        .catch(
+          (error) => {
+            console.warn(
+              '[RustDesk Ticket Button] Could not fetch asset page:',
+              normalizedAssetUrl,
+              error
+            );
+
+            return '';
+          }
+        );
+
+    assetLinkCache.set(
+      normalizedAssetUrl,
+      promise
+    );
+
+    return await promise;
+  }
+
+  function getNameCell(
     assetLink
   ) {
     return assetLink.closest(
@@ -2134,6 +2587,7 @@ function getNameCell(
   }
 
   async function processAttachedAssets() {
+    if (!location.pathname.startsWith("/tickets/")) return;
     const assetLinks =
       getAttachedAssetLinks();
 
@@ -2156,7 +2610,6 @@ function getNameCell(
   let pending = false;
 
   function scheduleProcessAttachedAssets() {
-    if (!(/^\/tickets\/\d+\/?$/.test(location.pathname))) return;
     if (pending) {
       return;
     }
@@ -2165,21 +2618,380 @@ function getNameCell(
 
     window.setTimeout(() => {
       pending = false;
-      if (!(/^\/tickets\/\d+\/?$/.test(location.pathname))) return;
 
       processAttachedAssets();
     }, 500);
   }
 
-  return scheduleProcessAttachedAssets;
+  scheduleProcessAttachedAssets();
 
-  })();
+  window.addEventListener(
+    'load',
+    scheduleProcessAttachedAssets
+  );
 
-  // Customer asset tables and alert rows use compact remote controls rather than
-  // the ticket page's dropdown layout. Keep each row independent: several alerts
-  // can refer to the same asset, and Syncro can replace/rebind rows in place.
-  const customerAndAlertTables = (function () {
-    const BUTTON_ATTR = 'data-tns-rustdesk-table-button';
+  const observer =
+    new MutationObserver(
+      scheduleProcessAttachedAssets
+    );
+
+  observer.observe(
+    document.body,
+    {
+      childList: true,
+      subtree: true
+    }
+  );
+})();
+
+// Customers and RMM Alerts: original-style split dropdowns.
+(function () {
+  'use strict';
+  const assetLinkCache = new Map();
+  const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 1000;
+  function normalizeUrl(
+    value,
+    base = window.location.origin
+  ) {
+    const trimmed =
+      (value || '').trim();
+
+    if (!trimmed) {
+      return '';
+    }
+
+    try {
+      return new URL(
+        trimmed,
+        base
+      ).href;
+    } catch {
+      return '';
+    }
+  }
+
+  function isMobileLikeDevice() {
+    if (
+      navigator.userAgentData?.mobile ===
+      true
+    ) {
+      return true;
+    }
+
+    if (
+      /Android|iPhone|iPad|iPod|Mobile/i.test(
+        navigator.userAgent
+      )
+    ) {
+      return true;
+    }
+
+    return (
+      navigator.maxTouchPoints > 0 &&
+      window.matchMedia(
+        '(pointer: coarse)'
+      ).matches
+    );
+  }
+
+  function shouldUseNativeNavigation(event) {
+    return (
+      isMobileLikeDevice() ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.altKey
+    );
+  }
+
+  function openRustDeskLaunchPage(
+    rustDeskUrl
+  ) {
+    let launchTab;
+
+    try {
+      launchTab =
+        GM_openInTab(
+          rustDeskUrl,
+          {
+            active: true,
+            insert: true,
+            setParent: true
+          }
+        );
+    } catch (error) {
+      console.warn(
+        '[RustDesk Ticket Button] Could not open RustDesk launch tab:',
+        error
+      );
+
+      return;
+    }
+
+    window.setTimeout(() => {
+      try {
+        launchTab?.close();
+      } catch (error) {
+        console.warn(
+          '[RustDesk Ticket Button] Could not automatically close launch tab:',
+          error
+        );
+      }
+    }, RUSTDESK_LAUNCH_TAB_CLOSE_DELAY);
+  }
+
+  function decodeHtml(value) {
+    const textarea =
+      document.createElement(
+        'textarea'
+      );
+
+    textarea.innerHTML =
+      value ||
+      '';
+
+    return textarea.value;
+  }
+
+  function getAssetIdFromUrl(url) {
+    try {
+      const parsed =
+        new URL(
+          url,
+          window.location.origin
+        );
+
+      const match =
+        parsed.pathname.match(
+          /^\/customer_assets\/(\d+)\/?$/
+        );
+
+      return (
+        match ?
+          match[1] :
+          ''
+      );
+    } catch {
+      return '';
+    }
+  }
+
+  function findValueByKey(
+    object,
+    targetKey
+  ) {
+    if (
+      !object ||
+      typeof object !== 'object'
+    ) {
+      return '';
+    }
+
+    if (
+      Object.prototype.hasOwnProperty.call(
+        object,
+        targetKey
+      )
+    ) {
+      return (
+        object[targetKey] ||
+        ''
+      );
+    }
+
+    for (
+      const value of
+      Object.values(object)
+    ) {
+      const found =
+        findValueByKey(
+          value,
+          targetKey
+        );
+
+      if (found) {
+        return found;
+      }
+    }
+
+    return '';
+  }
+
+  function getRustDeskLinkFromAssetDocument(
+    assetDoc,
+    rawHtml = ''
+  ) {
+    const fieldCell =
+      assetDoc.querySelector(
+        'td[data-testid="RustDesk Link"]'
+      );
+
+    if (fieldCell) {
+      const anchor =
+        fieldCell.querySelector(
+          'a[href]'
+        );
+
+      if (anchor?.href) {
+        return normalizeUrl(
+          anchor.href
+        );
+      }
+
+      const textUrl =
+        normalizeUrl(
+          fieldCell.textContent
+        );
+
+      if (textUrl) {
+        return textUrl;
+      }
+    }
+
+    const propNodes =
+      assetDoc.querySelectorAll(
+        '[data-react-props], [data-props]'
+      );
+
+    for (
+      const node of
+      propNodes
+    ) {
+      const raw =
+        node.getAttribute(
+          'data-react-props'
+        ) ||
+        node.getAttribute(
+          'data-props'
+        ) ||
+        '';
+
+      if (
+        !raw.includes(
+          'RustDesk Link'
+        )
+      ) {
+        continue;
+      }
+
+      try {
+        const props =
+          JSON.parse(raw);
+
+        const found =
+          normalizeUrl(
+            findValueByKey(
+              props,
+              'RustDesk Link'
+            )
+          );
+
+        if (found) {
+          return found;
+        }
+      } catch {
+        // Ignore invalid JSON blocks.
+      }
+    }
+
+    const regexMatch =
+      rawHtml.match(
+        /(?:&quot;|")RustDesk Link(?:&quot;|")\s*:?\s*(?:&quot;|")([^"&]+)(?:&quot;|")/
+      );
+
+    if (
+      regexMatch?.[1]
+    ) {
+      return normalizeUrl(
+        decodeHtml(
+          regexMatch[1]
+        )
+      );
+    }
+
+    return '';
+  }
+
+  async function fetchRustDeskLinkFromAsset(
+    assetUrl
+  ) {
+    const normalizedAssetUrl =
+      normalizeUrl(
+        assetUrl
+      );
+
+    if (!normalizedAssetUrl) {
+      return '';
+    }
+
+    if (
+      assetLinkCache.has(
+        normalizedAssetUrl
+      )
+    ) {
+      return await assetLinkCache.get(
+        normalizedAssetUrl
+      );
+    }
+
+    const promise =
+      fetch(
+        normalizedAssetUrl,
+        {
+          method: 'GET',
+          credentials:
+            'same-origin'
+        }
+      )
+        .then(
+          async (response) => {
+            if (
+              !response.ok
+            ) {
+              throw new Error(
+                `Asset page returned HTTP ${response.status}`
+              );
+            }
+
+            const html =
+              await response.text();
+
+            const assetDoc =
+              new DOMParser().parseFromString(
+                html,
+                'text/html'
+              );
+
+            return getRustDeskLinkFromAssetDocument(
+              assetDoc,
+              html
+            );
+          }
+        )
+        .catch(
+          (error) => {
+            console.warn(
+              '[RustDesk Ticket Button] Could not fetch asset page:',
+              normalizedAssetUrl,
+              error
+            );
+
+            return '';
+          }
+        );
+
+    assetLinkCache.set(
+      normalizedAssetUrl,
+      promise
+    );
+
+    return await promise;
+  }
+
+
+    const ITEM_ATTR = 'data-tns-rustdesk-table-menu-item';
+    const GROUP_ATTR = 'data-tns-rustdesk-table-dropdown';
     let pending = false;
 
     function isSupportedPage() {
@@ -2238,6 +3050,38 @@ function getNameCell(
       return null;
     }
 
+    function getOrCreateMenu(remoteCell, assetId) {
+      const remoteButton = remoteCell.querySelector(
+        `a[href*="/customer_assets/${assetId}/remote_access"], .btn-remote-access`
+      ) || Array.from(remoteCell.querySelectorAll('a.btn, button.btn')).find(button =>
+        !button.closest(`[${GROUP_ATTR}]`) && !/background/i.test(button.textContent)
+      );
+      let ownGroup = remoteCell.querySelector(`[${GROUP_ATTR}]`);
+      const nextGroup = remoteButton?.nextElementSibling;
+      const nativeMenu = nextGroup?.matches('.btn-group') && !nextGroup.hasAttribute(GROUP_ATTR) &&
+        !/background/i.test(nextGroup.textContent) ? nextGroup.querySelector(':scope > ul.dropdown-menu') : null;
+      const parentMenu = remoteButton?.closest('.btn-group')?.querySelector(':scope > ul.dropdown-menu');
+      const menu = nativeMenu || parentMenu;
+      if (menu && !ownGroup?.contains(menu)) {
+        ownGroup?.remove();
+        return menu;
+      }
+      if (!ownGroup) {
+        ownGroup = document.createElement('div');
+        ownGroup.className = 'btn-group';
+        ownGroup.setAttribute(GROUP_ATTR, 'true');
+        ownGroup.innerHTML = `
+          <a class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" href="#"
+             role="button" aria-haspopup="true" aria-label="Remote Access options" title="Remote Access options">
+            &nbsp;<span class="caret"></span>
+          </a>
+          <ul class="dropdown-menu dropdown-menu-right"></ul>`;
+        if (remoteButton) remoteButton.insertAdjacentElement('afterend', ownGroup);
+        else remoteCell.appendChild(ownGroup);
+      }
+      return ownGroup.querySelector('ul.dropdown-menu');
+    }
+
     async function processRows() {
       const pagePath = location.pathname;
       for (const row of document.querySelectorAll('table tr')) {
@@ -2251,23 +3095,31 @@ function getNameCell(
         // A slow lookup must not attach the previous asset's link to a reused row.
         if (!row.isConnected || location.pathname !== pagePath ||
             getRowAsset(row)?.id !== asset.id || getRemoteCell(row, asset.id) !== remoteCell) continue;
-        remoteCell.querySelectorAll(`[${BUTTON_ATTR}]`).forEach(button => button.remove());
-        if (!rustDeskUrl) continue;
-        const button = document.createElement('a');
-        button.className = 'btn btn-default btn-sm';
-        button.setAttribute(BUTTON_ATTR, asset.id);
-        button.href = rustDeskUrl;
-        button.target = '_blank';
-        button.rel = 'noopener noreferrer';
-        button.textContent = 'RustDesk';
-        button.title = 'Connect with RustDesk';
-        button.style.marginLeft = '4px';
-        button.addEventListener('click', event => {
+        // Retain the original scripts' remove/recreate behavior on each redraw.
+        remoteCell.querySelectorAll(`[${ITEM_ATTR}], [data-tns-rustdesk-table-button]`)
+          .forEach(item => item.remove());
+        if (!rustDeskUrl) {
+          remoteCell.querySelectorAll(`[${GROUP_ATTR}]`).forEach(group => group.remove());
+          continue;
+        }
+        const menu = getOrCreateMenu(remoteCell, asset.id);
+        const item = document.createElement('li');
+        item.setAttribute(ITEM_ATTR, asset.id);
+        const anchor = document.createElement('a');
+        anchor.href = rustDeskUrl;
+        anchor.target = '_blank';
+        anchor.rel = 'noopener noreferrer';
+        anchor.textContent = 'RustDesk';
+        anchor.addEventListener('click', event => {
           if (shouldUseNativeNavigation(event)) return;
           event.preventDefault();
-          launchRustDesk(button.href, 1000);
+          openRustDeskLaunchPage(anchor.href);
         });
-        remoteCell.appendChild(button);
+        item.appendChild(anchor);
+        const screenConnect = Array.from(menu.querySelectorAll('li')).find(li =>
+          /screen\s*connect/i.test(li.textContent)
+        );
+        menu.insertBefore(item, screenConnect || menu.firstElementChild);
       }
     }
 
@@ -2281,25 +3133,11 @@ function getNameCell(
         );
       }, 500);
     }
-    return schedule;
+    schedule();
+    window.addEventListener('load', schedule);
+    window.addEventListener('popstate', schedule);
+    document.addEventListener('turbolinks:load', schedule);
+    document.addEventListener('turbo:load', schedule);
+    new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
   })();
 
-  // One observer schedules the relevant page adapter after dynamic replacements.
-  function schedulePageUpdate() {
-    assetDetailsPage();
-    assetListPage();
-    chatPages();
-    ticketPages();
-    customerAndAlertTables();
-  }
-
-  schedulePageUpdate();
-  window.addEventListener('load', schedulePageUpdate);
-  window.addEventListener('popstate', schedulePageUpdate);
-  document.addEventListener('turbolinks:load', schedulePageUpdate);
-  document.addEventListener('turbo:load', schedulePageUpdate);
-  new MutationObserver(schedulePageUpdate).observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-})();
