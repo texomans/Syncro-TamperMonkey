@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - RustDesk Remote Access
 // @namespace    https://texomans.com/
-// @version      2.0.4
+// @version      2.0.5
 // @description  RustDesk controls for asset details, Assets & RMM, tickets, chat, Customers asset tables, and RMM Alerts.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20RustDesk%20Remote%20Access.js
@@ -195,11 +195,75 @@
     return '';
   }
 
+  function getRustDeskLinkFromAssetDocument(assetDoc, rawHtml = '', expectedAssetId = '') {
+    const expected = String(expectedAssetId);
+    if (!/^\d+$/.test(expected)) return '';
+    const rowScoped = assetDoc.nodeType === 1 && assetDoc.matches('tr, [role="row"]');
+    const propNodes = [
+      ...(assetDoc.nodeType === 1 && assetDoc.matches('[data-react-props], [data-props]') ? [assetDoc] : []),
+      ...assetDoc.querySelectorAll('[data-react-props], [data-props]')
+    ];
+    let identifiedRecords = false;
+    let rowValue = '';
+
+    function findAssetRecord(object) {
+      if (!object || typeof object !== 'object') return null;
+      // Traverse records by identity; never search recursively for the field name.
+      const hasFields = Object.prototype.hasOwnProperty.call(object, 'properties') ||
+        Object.prototype.hasOwnProperty.call(object, 'new_properties');
+      const id = object.id ?? object.asset_id ?? object.assetId;
+      if (hasFields && id != null) {
+        identifiedRecords = true;
+        if (String(id) === expected) return object;
+      }
+      for (const child of Object.values(object)) {
+        const record = findAssetRecord(child);
+        if (record) return record;
+      }
+      return null;
+    }
+
+    function readOwnField(record) {
+      for (const fields of [record.properties, record.new_properties]) {
+        if (fields && Object.prototype.hasOwnProperty.call(fields, 'RustDesk Link')) {
+          return normalizeUrl(fields['RustDesk Link']);
+        }
+      }
+      return '';
+    }
+
+    for (const node of propNodes) {
+      try {
+        const props = JSON.parse(node.getAttribute('data-react-props') || node.getAttribute('data-props') || '{}');
+        const record = findAssetRecord(props);
+        // A matched asset with a missing/empty field is authoritative.
+        if (record) return readOwnField(record);
+        if (rowScoped) {
+          for (const candidate of [props.asset, props]) {
+            if (candidate && candidate.id == null && candidate.asset_id == null && candidate.assetId == null) {
+              rowValue ||= readOwnField(candidate);
+            }
+          }
+        }
+      } catch { /* Invalid component data is not a source of remote links. */ }
+    }
+    if (identifiedRecords) return '';
+    if (rowScoped && rowValue) return rowValue;
+
+    // With no embedded asset records, the explicit field on the requested asset
+    // page (or the already-identified row) is the only remaining permitted source.
+    const fieldCell = assetDoc.querySelector('td[data-testid="RustDesk Link"]');
+    if (!fieldCell) return '';
+    for (const anchor of fieldCell.querySelectorAll('a[href]')) {
+      const value = normalizeUrl(anchor.getAttribute('href'));
+      if (value) return value;
+    }
+    return normalizeUrl(fieldCell.textContent);
+  }
+
   function getRustDeskLink() {
-    return (
-      getRustDeskLinkFromCustomField() ||
-      getRustDeskLinkFromReactProps()
-    );
+    const assetId = location.pathname.match(/^\/customer_assets\/(\d+)\/?$/)?.[1] || '';
+    return getRustDeskLinkFromAssetDocument(document, '', assetId);
   }
 
   function getNativeRemoteAccessButton() {
@@ -962,51 +1026,74 @@
     return '';
   }
 
-  function getRustDeskLinkFromRow(row) {
-    const propNodes =
-      row.querySelectorAll(
-        '[data-react-props], [data-props]'
-      );
+  function getRustDeskLinkFromAssetDocument(assetDoc, rawHtml = '', expectedAssetId = '') {
+    const expected = String(expectedAssetId);
+    if (!/^\d+$/.test(expected)) return '';
+    const rowScoped = assetDoc.nodeType === 1 && assetDoc.matches('tr, [role="row"]');
+    const propNodes = [
+      ...(assetDoc.nodeType === 1 && assetDoc.matches('[data-react-props], [data-props]') ? [assetDoc] : []),
+      ...assetDoc.querySelectorAll('[data-react-props], [data-props]')
+    ];
+    let identifiedRecords = false;
+    let rowValue = '';
 
-    for (const node of propNodes) {
-      const raw =
-        node.getAttribute(
-          'data-react-props'
-        ) ||
-        node.getAttribute(
-          'data-props'
-        ) ||
-        '';
-
-      if (
-        !raw.includes(
-          'RustDesk Link'
-        )
-      ) {
-        continue;
+    function findAssetRecord(object) {
+      if (!object || typeof object !== 'object') return null;
+      // Traverse records by identity; never search recursively for the field name.
+      const hasFields = Object.prototype.hasOwnProperty.call(object, 'properties') ||
+        Object.prototype.hasOwnProperty.call(object, 'new_properties');
+      const id = object.id ?? object.asset_id ?? object.assetId;
+      if (hasFields && id != null) {
+        identifiedRecords = true;
+        if (String(id) === expected) return object;
       }
-
-      try {
-        const props =
-          JSON.parse(raw);
-
-        const rustDeskLink =
-          normalizeUrl(
-            findValueByKey(
-              props,
-              'RustDesk Link'
-            )
-          );
-
-        if (rustDeskLink) {
-          return rustDeskLink;
-        }
-      } catch {
-        // Ignore invalid JSON blocks.
+      for (const child of Object.values(object)) {
+        const record = findAssetRecord(child);
+        if (record) return record;
       }
+      return null;
     }
 
-    return '';
+    function readOwnField(record) {
+      for (const fields of [record.properties, record.new_properties]) {
+        if (fields && Object.prototype.hasOwnProperty.call(fields, 'RustDesk Link')) {
+          return normalizeUrl(fields['RustDesk Link']);
+        }
+      }
+      return '';
+    }
+
+    for (const node of propNodes) {
+      try {
+        const props = JSON.parse(node.getAttribute('data-react-props') || node.getAttribute('data-props') || '{}');
+        const record = findAssetRecord(props);
+        // A matched asset with a missing/empty field is authoritative.
+        if (record) return readOwnField(record);
+        if (rowScoped) {
+          for (const candidate of [props.asset, props]) {
+            if (candidate && candidate.id == null && candidate.asset_id == null && candidate.assetId == null) {
+              rowValue ||= readOwnField(candidate);
+            }
+          }
+        }
+      } catch { /* Invalid component data is not a source of remote links. */ }
+    }
+    if (identifiedRecords) return '';
+    if (rowScoped && rowValue) return rowValue;
+
+    // With no embedded asset records, the explicit field on the requested asset
+    // page (or the already-identified row) is the only remaining permitted source.
+    const fieldCell = assetDoc.querySelector('td[data-testid="RustDesk Link"]');
+    if (!fieldCell) return '';
+    for (const anchor of fieldCell.querySelectorAll('a[href]')) {
+      const value = normalizeUrl(anchor.getAttribute('href'));
+      if (value) return value;
+    }
+    return normalizeUrl(fieldCell.textContent);
+  }
+
+  function getRustDeskLinkFromRow(row) {
+    return getRustDeskLinkFromAssetDocument(row, '', getAssetIdFromRow(row));
   }
 
   function getRemoteAccessWrapper(
@@ -1397,54 +1484,70 @@
     return '';
   }
 
-  function getRustDeskLinkFromAssetDocument(assetDoc) {
-    const fieldCell = assetDoc.querySelector(
-      'td[data-testid="RustDesk Link"]'
-    );
+  function getRustDeskLinkFromAssetDocument(assetDoc, rawHtml = '', expectedAssetId = '') {
+    const expected = String(expectedAssetId);
+    if (!/^\d+$/.test(expected)) return '';
+    const rowScoped = assetDoc.nodeType === 1 && assetDoc.matches('tr, [role="row"]');
+    const propNodes = [
+      ...(assetDoc.nodeType === 1 && assetDoc.matches('[data-react-props], [data-props]') ? [assetDoc] : []),
+      ...assetDoc.querySelectorAll('[data-react-props], [data-props]')
+    ];
+    let identifiedRecords = false;
+    let rowValue = '';
 
-    if (fieldCell) {
-      for (const anchor of fieldCell.querySelectorAll('a[href]')) {
-        const fieldUrl = normalizeUrl(anchor.getAttribute('href'));
-        if (fieldUrl) return fieldUrl;
+    function findAssetRecord(object) {
+      if (!object || typeof object !== 'object') return null;
+      // Traverse records by identity; never search recursively for the field name.
+      const hasFields = Object.prototype.hasOwnProperty.call(object, 'properties') ||
+        Object.prototype.hasOwnProperty.call(object, 'new_properties');
+      const id = object.id ?? object.asset_id ?? object.assetId;
+      if (hasFields && id != null) {
+        identifiedRecords = true;
+        if (String(id) === expected) return object;
       }
-
-      const textUrl = normalizeUrl(fieldCell.textContent);
-
-      if (textUrl) {
-        return textUrl;
+      for (const child of Object.values(object)) {
+        const record = findAssetRecord(child);
+        if (record) return record;
       }
+      return null;
     }
 
-    const propNodes = assetDoc.querySelectorAll(
-      '[data-react-props], [data-props]'
-    );
+    function readOwnField(record) {
+      for (const fields of [record.properties, record.new_properties]) {
+        if (fields && Object.prototype.hasOwnProperty.call(fields, 'RustDesk Link')) {
+          return normalizeUrl(fields['RustDesk Link']);
+        }
+      }
+      return '';
+    }
 
     for (const node of propNodes) {
-      const raw =
-        node.getAttribute('data-react-props') ||
-        node.getAttribute('data-props') ||
-        '';
-
-      if (!raw.includes('RustDesk Link')) {
-        continue;
-      }
-
       try {
-        const props = JSON.parse(raw);
-
-        const found = normalizeUrl(
-          findValueByKey(props, 'RustDesk Link')
-        );
-
-        if (found) {
-          return found;
+        const props = JSON.parse(node.getAttribute('data-react-props') || node.getAttribute('data-props') || '{}');
+        const record = findAssetRecord(props);
+        // A matched asset with a missing/empty field is authoritative.
+        if (record) return readOwnField(record);
+        if (rowScoped) {
+          for (const candidate of [props.asset, props]) {
+            if (candidate && candidate.id == null && candidate.asset_id == null && candidate.assetId == null) {
+              rowValue ||= readOwnField(candidate);
+            }
+          }
         }
-      } catch {
-        // Ignore invalid JSON blocks.
-      }
+      } catch { /* Invalid component data is not a source of remote links. */ }
     }
+    if (identifiedRecords) return '';
+    if (rowScoped && rowValue) return rowValue;
 
-    return '';
+    // With no embedded asset records, the explicit field on the requested asset
+    // page (or the already-identified row) is the only remaining permitted source.
+    const fieldCell = assetDoc.querySelector('td[data-testid="RustDesk Link"]');
+    if (!fieldCell) return '';
+    for (const anchor of fieldCell.querySelectorAll('a[href]')) {
+      const value = normalizeUrl(anchor.getAttribute('href'));
+      if (value) return value;
+    }
+    return normalizeUrl(fieldCell.textContent);
   }
 
   async function fetchRustDeskLinkFromAsset(assetUrl) {
@@ -1467,6 +1570,7 @@
           throw new Error(`Asset page returned HTTP ${response.status}`);
         }
 
+        if (response.url && getAssetIdFromUrl(response.url) !== getAssetIdFromUrl(normalizedAssetUrl)) return '';
         const html = await response.text();
 
         const assetDoc = new DOMParser().parseFromString(
@@ -1474,7 +1578,7 @@
           'text/html'
         );
 
-        return getRustDeskLinkFromAssetDocument(assetDoc);
+        return getRustDeskLinkFromAssetDocument(assetDoc, html, getAssetIdFromUrl(normalizedAssetUrl));
       })
       .catch((error) => {
         console.warn(
@@ -2081,93 +2185,70 @@
     return '';
   }
 
-  function getRustDeskLinkFromAssetDocument(
-    assetDoc,
-    rawHtml = ''
-  ) {
-    const fieldCell =
-      assetDoc.querySelector(
-        'td[data-testid="RustDesk Link"]'
-      );
+  function getRustDeskLinkFromAssetDocument(assetDoc, rawHtml = '', expectedAssetId = '') {
+    const expected = String(expectedAssetId);
+    if (!/^\d+$/.test(expected)) return '';
+    const rowScoped = assetDoc.nodeType === 1 && assetDoc.matches('tr, [role="row"]');
+    const propNodes = [
+      ...(assetDoc.nodeType === 1 && assetDoc.matches('[data-react-props], [data-props]') ? [assetDoc] : []),
+      ...assetDoc.querySelectorAll('[data-react-props], [data-props]')
+    ];
+    let identifiedRecords = false;
+    let rowValue = '';
 
-    if (fieldCell) {
-      for (const anchor of fieldCell.querySelectorAll('a[href]')) {
-        const fieldUrl = normalizeUrl(anchor.getAttribute('href'));
-        if (fieldUrl) return fieldUrl;
+    function findAssetRecord(object) {
+      if (!object || typeof object !== 'object') return null;
+      // Traverse records by identity; never search recursively for the field name.
+      const hasFields = Object.prototype.hasOwnProperty.call(object, 'properties') ||
+        Object.prototype.hasOwnProperty.call(object, 'new_properties');
+      const id = object.id ?? object.asset_id ?? object.assetId;
+      if (hasFields && id != null) {
+        identifiedRecords = true;
+        if (String(id) === expected) return object;
       }
-
-      const textUrl =
-        normalizeUrl(
-          fieldCell.textContent
-        );
-
-      if (textUrl) {
-        return textUrl;
+      for (const child of Object.values(object)) {
+        const record = findAssetRecord(child);
+        if (record) return record;
       }
+      return null;
     }
 
-    const propNodes =
-      assetDoc.querySelectorAll(
-        '[data-react-props], [data-props]'
-      );
-
-    for (
-      const node of
-      propNodes
-    ) {
-      const raw =
-        node.getAttribute(
-          'data-react-props'
-        ) ||
-        node.getAttribute(
-          'data-props'
-        ) ||
-        '';
-
-      if (
-        !raw.includes(
-          'RustDesk Link'
-        )
-      ) {
-        continue;
-      }
-
-      try {
-        const props =
-          JSON.parse(raw);
-
-        const found =
-          normalizeUrl(
-            findValueByKey(
-              props,
-              'RustDesk Link'
-            )
-          );
-
-        if (found) {
-          return found;
+    function readOwnField(record) {
+      for (const fields of [record.properties, record.new_properties]) {
+        if (fields && Object.prototype.hasOwnProperty.call(fields, 'RustDesk Link')) {
+          return normalizeUrl(fields['RustDesk Link']);
         }
-      } catch {
-        // Ignore invalid JSON blocks.
       }
+      return '';
     }
 
-    const regexMatch =
-      rawHtml.match(
-        /(?:&quot;|")RustDesk Link(?:&quot;|")\s*:?\s*(?:&quot;|")([^"&]+)(?:&quot;|")/
-      );
-
-    if (
-      regexMatch?.[1]
-    ) {
-      return normalizeUrl(
-        decodeHtml(
-          regexMatch[1]
-        )
-      );
+    for (const node of propNodes) {
+      try {
+        const props = JSON.parse(node.getAttribute('data-react-props') || node.getAttribute('data-props') || '{}');
+        const record = findAssetRecord(props);
+        // A matched asset with a missing/empty field is authoritative.
+        if (record) return readOwnField(record);
+        if (rowScoped) {
+          for (const candidate of [props.asset, props]) {
+            if (candidate && candidate.id == null && candidate.asset_id == null && candidate.assetId == null) {
+              rowValue ||= readOwnField(candidate);
+            }
+          }
+        }
+      } catch { /* Invalid component data is not a source of remote links. */ }
     }
+    if (identifiedRecords) return '';
+    if (rowScoped && rowValue) return rowValue;
 
-    return '';
+    // With no embedded asset records, the explicit field on the requested asset
+    // page (or the already-identified row) is the only remaining permitted source.
+    const fieldCell = assetDoc.querySelector('td[data-testid="RustDesk Link"]');
+    if (!fieldCell) return '';
+    for (const anchor of fieldCell.querySelectorAll('a[href]')) {
+      const value = normalizeUrl(anchor.getAttribute('href'));
+      if (value) return value;
+    }
+    return normalizeUrl(fieldCell.textContent);
   }
 
   async function fetchRustDeskLinkFromAsset(
@@ -2209,6 +2290,7 @@
               );
             }
 
+            if (response.url && getAssetIdFromUrl(response.url) !== getAssetIdFromUrl(normalizedAssetUrl)) return '';
             const html =
               await response.text();
 
@@ -2218,10 +2300,7 @@
                 'text/html'
               );
 
-            return getRustDeskLinkFromAssetDocument(
-              assetDoc,
-              html
-            );
+            return getRustDeskLinkFromAssetDocument(assetDoc, html, getAssetIdFromUrl(normalizedAssetUrl));
           }
         )
         .catch(
@@ -2780,93 +2859,70 @@
     return '';
   }
 
-  function getRustDeskLinkFromAssetDocument(
-    assetDoc,
-    rawHtml = ''
-  ) {
-    const fieldCell =
-      assetDoc.querySelector(
-        'td[data-testid="RustDesk Link"]'
-      );
+  function getRustDeskLinkFromAssetDocument(assetDoc, rawHtml = '', expectedAssetId = '') {
+    const expected = String(expectedAssetId);
+    if (!/^\d+$/.test(expected)) return '';
+    const rowScoped = assetDoc.nodeType === 1 && assetDoc.matches('tr, [role="row"]');
+    const propNodes = [
+      ...(assetDoc.nodeType === 1 && assetDoc.matches('[data-react-props], [data-props]') ? [assetDoc] : []),
+      ...assetDoc.querySelectorAll('[data-react-props], [data-props]')
+    ];
+    let identifiedRecords = false;
+    let rowValue = '';
 
-    if (fieldCell) {
-      for (const anchor of fieldCell.querySelectorAll('a[href]')) {
-        const fieldUrl = normalizeUrl(anchor.getAttribute('href'));
-        if (fieldUrl) return fieldUrl;
+    function findAssetRecord(object) {
+      if (!object || typeof object !== 'object') return null;
+      // Traverse records by identity; never search recursively for the field name.
+      const hasFields = Object.prototype.hasOwnProperty.call(object, 'properties') ||
+        Object.prototype.hasOwnProperty.call(object, 'new_properties');
+      const id = object.id ?? object.asset_id ?? object.assetId;
+      if (hasFields && id != null) {
+        identifiedRecords = true;
+        if (String(id) === expected) return object;
       }
-
-      const textUrl =
-        normalizeUrl(
-          fieldCell.textContent
-        );
-
-      if (textUrl) {
-        return textUrl;
+      for (const child of Object.values(object)) {
+        const record = findAssetRecord(child);
+        if (record) return record;
       }
+      return null;
     }
 
-    const propNodes =
-      assetDoc.querySelectorAll(
-        '[data-react-props], [data-props]'
-      );
-
-    for (
-      const node of
-      propNodes
-    ) {
-      const raw =
-        node.getAttribute(
-          'data-react-props'
-        ) ||
-        node.getAttribute(
-          'data-props'
-        ) ||
-        '';
-
-      if (
-        !raw.includes(
-          'RustDesk Link'
-        )
-      ) {
-        continue;
-      }
-
-      try {
-        const props =
-          JSON.parse(raw);
-
-        const found =
-          normalizeUrl(
-            findValueByKey(
-              props,
-              'RustDesk Link'
-            )
-          );
-
-        if (found) {
-          return found;
+    function readOwnField(record) {
+      for (const fields of [record.properties, record.new_properties]) {
+        if (fields && Object.prototype.hasOwnProperty.call(fields, 'RustDesk Link')) {
+          return normalizeUrl(fields['RustDesk Link']);
         }
-      } catch {
-        // Ignore invalid JSON blocks.
       }
+      return '';
     }
 
-    const regexMatch =
-      rawHtml.match(
-        /(?:&quot;|")RustDesk Link(?:&quot;|")\s*:?\s*(?:&quot;|")([^"&]+)(?:&quot;|")/
-      );
-
-    if (
-      regexMatch?.[1]
-    ) {
-      return normalizeUrl(
-        decodeHtml(
-          regexMatch[1]
-        )
-      );
+    for (const node of propNodes) {
+      try {
+        const props = JSON.parse(node.getAttribute('data-react-props') || node.getAttribute('data-props') || '{}');
+        const record = findAssetRecord(props);
+        // A matched asset with a missing/empty field is authoritative.
+        if (record) return readOwnField(record);
+        if (rowScoped) {
+          for (const candidate of [props.asset, props]) {
+            if (candidate && candidate.id == null && candidate.asset_id == null && candidate.assetId == null) {
+              rowValue ||= readOwnField(candidate);
+            }
+          }
+        }
+      } catch { /* Invalid component data is not a source of remote links. */ }
     }
+    if (identifiedRecords) return '';
+    if (rowScoped && rowValue) return rowValue;
 
-    return '';
+    // With no embedded asset records, the explicit field on the requested asset
+    // page (or the already-identified row) is the only remaining permitted source.
+    const fieldCell = assetDoc.querySelector('td[data-testid="RustDesk Link"]');
+    if (!fieldCell) return '';
+    for (const anchor of fieldCell.querySelectorAll('a[href]')) {
+      const value = normalizeUrl(anchor.getAttribute('href'));
+      if (value) return value;
+    }
+    return normalizeUrl(fieldCell.textContent);
   }
 
   async function fetchRustDeskLinkFromAsset(
@@ -2908,6 +2964,7 @@
               );
             }
 
+            if (response.url && getAssetIdFromUrl(response.url) !== getAssetIdFromUrl(normalizedAssetUrl)) return '';
             const html =
               await response.text();
 
@@ -2917,10 +2974,7 @@
                 'text/html'
               );
 
-            return getRustDeskLinkFromAssetDocument(
-              assetDoc,
-              html
-            );
+            return getRustDeskLinkFromAssetDocument(assetDoc, html, getAssetIdFromUrl(normalizedAssetUrl));
           }
         )
         .catch(
@@ -3044,7 +3098,7 @@
         if (!asset) continue;
         const remoteCell = getRemoteCell(row, asset.id);
         if (!remoteCell) continue;
-        const rustDeskUrl = getRustDeskLinkFromAssetDocument(row) ||
+        const rustDeskUrl = getRustDeskLinkFromAssetDocument(row, '', asset.id) ||
           await fetchRustDeskLinkFromAsset(asset.url);
         // A slow lookup must not attach the previous asset's link to a reused row.
         if (!row.isConnected || location.pathname !== pagePath ||
@@ -3094,5 +3148,6 @@
     document.addEventListener('turbo:load', schedule);
     new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
   })();
+
 
 
