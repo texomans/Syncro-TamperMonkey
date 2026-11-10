@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Syncro - PWPush Password Generator
 // @namespace    https://texomans.com/
-// @version      1.0.6
-// @description  Generate secure PWPush links in Syncro; copy them or insert a rich-text ticket reply.
+// @version      1.0.7
+// @description  Generate or share existing passwords securely through PWPush from Syncro; copy links or insert rich-text ticket replies.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20PWPush%20Password%20Generator.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20PWPush%20Password%20Generator.js
@@ -27,7 +27,8 @@
  * Requires PWPush OSS API v2 and Syncro access to the customer field.
  * This field is plaintext; limit who can view its value in Syncro.
  * If an unlock passphrase is set, give it to the recipient separately.
- * v1.0.6 diagnostics include safe metadata only (no secrets or links).
+ * v1.0.6+ diagnostics include safe metadata only (no secrets or links).
+ * v1.0.7 adds an option to share an existing password unchanged.
  */
 
 (function () {
@@ -453,6 +454,25 @@
         });
     }
 
+    // Existing passwords bypass PWPush generation and the generated-password
+    // character requirements. Preserve the exact input, including spaces and
+    // Unicode. Do not silently trim or change passwords provided by a tech.
+    function validateExistingPassword(value) {
+        if (typeof value !== 'string' || value.length === 0) {
+            throw diagnosticError('Validate existing password', 'EMPTY_EXISTING_PASSWORD',
+                'Paste an existing password before sharing. Nothing has been sent.');
+        }
+        if (value.length > 4096) {
+            throw diagnosticError('Validate existing password', 'EXISTING_PASSWORD_TOO_LONG',
+                'Existing passwords must be 4,096 characters or fewer. Nothing has been sent.');
+        }
+        if (/[\r\n]/.test(value)) {
+            throw diagnosticError('Validate existing password', 'EXISTING_PASSWORD_LINE_BREAK',
+                'The existing password contains a line break. Check the original password before sharing.');
+        }
+        return value;
+    }
+
     function getSafeShareUrl(value) {
         if (typeof value !== 'string') throw new Error('PWPush did not return a sharing link.');
         let url;
@@ -571,6 +591,11 @@
             #${MODAL_ID} h2 { margin:0; color:white; font-size:19px; font-weight:700; }
             #${MODAL_ID} p { margin:6px 0 13px; }
             #${MODAL_ID} .tns-pw-muted { color:#bdc7d3; font-size:12px; }
+            #${MODAL_ID} [hidden] { display:none !important; }
+            #${MODAL_ID} .tns-pw-source-options { display:flex; flex-wrap:wrap; gap:8px; }
+            #${MODAL_ID} .tns-pw-source-option { display:flex; align-items:center; gap:7px; border:1px solid #66717e; border-radius:6px; padding:8px 11px; cursor:pointer; font-weight:normal; }
+            #${MODAL_ID} .tns-pw-source-option:has(input:checked) { background:#1e4664; border-color:#4583bb; }
+            #${MODAL_ID} .tns-pw-source-option input { margin:0; accent-color:#68a6da; }
             #${MODAL_ID} .tns-pw-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin:12px 0; }
             #${MODAL_ID} .tns-pw-field { display:flex; flex-direction:column; gap:5px; min-width:0; }
             #${MODAL_ID} .tns-pw-passphrase-wrap { position:relative; }
@@ -617,8 +642,22 @@
             <div class="tns-pw-card" role="dialog" aria-modal="true" aria-label="Secure Password Generator">
                 <div class="tns-pw-head"><h2>Secure Password Generator</h2><button type="button" data-action="close" aria-label="Close">&times;</button></div>
                 <p class="tns-pw-muted">PWPush Open Source - ${PW_HOST}<br>Copy the secure link${ticketMode ? ' and prepare a ticket update' : ''}. Never put the password itself in a ticket.</p>
+                <div class="tns-pw-field">
+                    <label>Password source</label>
+                    <div class="tns-pw-source-options" role="radiogroup" aria-label="Password source">
+                        <label class="tns-pw-source-option"><input type="radio" name="tns-pw-source" value="generate" checked> Generate password</label>
+                        <label class="tns-pw-source-option"><input type="radio" name="tns-pw-source" value="existing"> Use existing password</label>
+                    </div>
+                </div>
                 <div class="tns-pw-grid">
-                    <div class="tns-pw-field"><label for="tns-pw-length">Password length</label><input id="tns-pw-length" type="number" min="12" max="64" value="${DEFAULTS.length}"></div>
+                    <div class="tns-pw-field" data-tns-pw-generate-only><label for="tns-pw-length">Password length</label><input id="tns-pw-length" type="number" min="12" max="64" value="${DEFAULTS.length}"></div>
+                    <div class="tns-pw-field" data-tns-pw-existing-only hidden>
+                        <label for="tns-pw-existing-password">Existing password</label>
+                        <div class="tns-pw-passphrase-wrap">
+                            <input id="tns-pw-existing-password" type="password" placeholder="Paste password here" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+                            <button type="button" data-action="toggle-existing" aria-label="Show existing password" aria-pressed="false" title="Show / hide existing password"><i class="fas fa-eye" aria-hidden="true"></i></button>
+                        </div>
+                    </div>
                     <div class="tns-pw-field"><label for="tns-pw-days">Expires after</label><select id="tns-pw-days"><option value="1">1 day</option><option value="3">3 days</option><option value="7" selected>7 days</option><option value="14">14 days</option><option value="30">30 days</option></select></div>
                     <div class="tns-pw-field"><label for="tns-pw-views">Maximum views</label><select id="tns-pw-views"><option value="1">1 view</option><option value="3" selected>3 views</option><option value="5">5 views</option><option value="10">10 views</option></select></div>
                     <div class="tns-pw-field">
@@ -631,8 +670,9 @@
                         </div>
                     </div>
                 </div>
+                <p class="tns-pw-muted" data-tns-pw-existing-only hidden>Existing passwords are shared exactly as entered. Generator character rules do not apply.</p>
                 <p class="tns-pw-muted">Optional unlock passphrases must be provided to the recipient separately from this link.</p>
-                <div class="tns-pw-field">
+                <div class="tns-pw-field" data-tns-pw-generate-only>
                     <label>Password character types (at least one of each checked type)</label>
                     <div class="tns-pw-classes">
                         <label class="tns-pw-check"><input id="tns-pw-uppercase" type="checkbox" ${DEFAULTS.uppercase ? 'checked' : ''}> Uppercase (A-Z)</label>
@@ -641,7 +681,9 @@
                         <label class="tns-pw-check"><input id="tns-pw-symbols" type="checkbox" ${DEFAULTS.symbols ? 'checked' : ''}> Symbols (!@#$%^&amp;*)</label>
                     </div>
                 </div>
-                <label class="tns-pw-check"><input id="tns-pw-ambiguous" type="checkbox" ${DEFAULTS.avoidAmbiguous ? 'checked' : ''}> Avoid confusing characters (0/O, 1/l, etc.)</label>
+                <div data-tns-pw-generate-only>
+                    <label class="tns-pw-check"><input id="tns-pw-ambiguous" type="checkbox" ${DEFAULTS.avoidAmbiguous ? 'checked' : ''}> Avoid confusing characters (0/O, 1/l, etc.)</label>
+                </div>
                 ${ticketMode ? '<label class="tns-pw-check"><input id="tns-pw-insert" type="checkbox" checked> Insert formatted message into the current ticket update</label>' : ''}
                 <p class="tns-pw-muted">The ticket is never submitted automatically. Existing text and the Public/Private selection are preserved.</p>
                 <div class="tns-pw-actions"><button type="button" class="tns-pw-main" data-action="generate">Generate &amp; Share</button></div>
@@ -653,10 +695,10 @@
                     <p class="tns-pw-muted">Only safe metadata is included: never an API key, password, unlock passphrase, or secret link.</p>
                 </details>
                 <section class="tns-pw-result" aria-label="Generated result">
-                    <div class="tns-pw-field"><label for="tns-pw-password">Generated password</label><input id="tns-pw-password" type="password" readonly autocomplete="off"></div>
+                    <div class="tns-pw-field"><label for="tns-pw-password">Shared password</label><input id="tns-pw-password" type="password" readonly autocomplete="off"></div>
                     <div class="tns-pw-actions"><button type="button" data-action="toggle">Show / Hide Password</button><button type="button" data-action="copy-password">Copy Password</button></div>
                     <div class="tns-pw-field" style="margin-top:12px;"><label for="tns-pw-url">Secure sharing link</label><input id="tns-pw-url" type="text" readonly></div>
-                    <div class="tns-pw-actions"><button type="button" data-action="copy-link">Copy Link</button>${ticketMode ? '<button type="button" data-action="insert">Insert into Ticket</button>' : ''}<button type="button" data-action="again">Generate Another</button></div>
+                    <div class="tns-pw-actions"><button type="button" data-action="copy-link">Copy Link</button>${ticketMode ? '<button type="button" data-action="insert">Insert into Ticket</button>' : ''}<button type="button" data-action="again">Start Another</button></div>
                     <div class="tns-pw-muted" style="margin-top:10px;">Customer-facing message:</div><div class="tns-pw-preview"></div>
                 </section>
             </div>
@@ -705,6 +747,7 @@
             state.password = '';
             state.link = '';
             $('#tns-pw-passphrase').value = '';
+            $('#tns-pw-existing-password').value = '';
             overlay.remove();
         }
         function keyHandler(event) { if (event.key === 'Escape') close(); }
@@ -717,6 +760,48 @@
             $('[data-action="copy-diagnostics"]').textContent = copied
                 ? 'Diagnostics Copied' : 'Copy failed - select and copy the text';
         });
+        function selectedPasswordSource() {
+            return overlay.querySelector('input[name="tns-pw-source"]:checked')?.value || 'generate';
+        }
+        function updatePasswordSource() {
+            const existing = selectedPasswordSource() === 'existing';
+            overlay.querySelectorAll('[data-tns-pw-generate-only]').forEach(element => {
+                element.hidden = existing;
+            });
+            overlay.querySelectorAll('[data-tns-pw-existing-only]').forEach(element => {
+                element.hidden = !existing;
+            });
+            generate.textContent = existing ? 'Share Existing Password' : 'Generate & Share';
+            if (!state.busy) {
+                clearDiagnostic();
+                setStatus('');
+            }
+        }
+        overlay.querySelectorAll('input[name="tns-pw-source"]').forEach(input => {
+            input.addEventListener('change', updatePasswordSource);
+        });
+        updatePasswordSource();
+
+        $('[data-action="toggle-existing"]').addEventListener('click', () => {
+            const input = $('#tns-pw-existing-password');
+            const button = $('[data-action="toggle-existing"]');
+            const showing = input.type === 'password';
+            input.type = showing ? 'text' : 'password';
+            button.setAttribute('aria-label', showing ? 'Hide existing password' : 'Show existing password');
+            button.setAttribute('aria-pressed', String(showing));
+            button.querySelector('i').className = showing ? 'fas fa-eye-slash' : 'fas fa-eye';
+        });
+        // Password inputs can silently remove pasted newlines. Block that
+        // rather than share a password different from the original clipboard.
+        $('#tns-pw-existing-password').addEventListener('paste', event => {
+            const pasted = event.clipboardData?.getData('text/plain');
+            if (typeof pasted === 'string' && /[\r\n]/.test(pasted)) {
+                event.preventDefault();
+                clearDiagnostic();
+                setStatus('Pasted text includes a line break. Copy only the password and paste again; nothing was changed.', true);
+            }
+        });
+
         $('[data-action="toggle-passphrase"]').addEventListener('click', () => {
             const input = $('#tns-pw-passphrase');
             const button = $('[data-action="toggle-passphrase"]');
@@ -730,6 +815,7 @@
         generate.addEventListener('click', async () => {
             if (state.busy) return;
             clearDiagnostic();
+            const useExistingPassword = selectedPasswordSource() === 'existing';
             const length = Number($('#tns-pw-length').value);
             const days = Number($('#tns-pw-days').value);
             const views = Number($('#tns-pw-views').value);
@@ -742,13 +828,24 @@
                 symbols: $('#tns-pw-symbols').checked,
                 avoidAmbiguous: $('#tns-pw-ambiguous').checked
             };
-            if (!Number.isInteger(length) || length < 12 || length > 64) {
-                setStatus('Password length must be between 12 and 64.', true);
-                return;
-            }
-            if (![rules.uppercase, rules.lowercase, rules.digits, rules.symbols].some(Boolean)) {
-                setStatus('Select at least one character type before generating.', true);
-                return;
+            let existingPassword = '';
+            if (useExistingPassword) {
+                existingPassword = $('#tns-pw-existing-password').value;
+                try {
+                    validateExistingPassword(existingPassword);
+                } catch (error) {
+                    showError(error, 'Validate existing password');
+                    return;
+                }
+            } else {
+                if (!Number.isInteger(length) || length < 12 || length > 64) {
+                    setStatus('Password length must be between 12 and 64.', true);
+                    return;
+                }
+                if (![rules.uppercase, rules.lowercase, rules.digits, rules.symbols].some(Boolean)) {
+                    setStatus('Select at least one character type before generating.', true);
+                    return;
+                }
             }
             state.busy = true;
             generate.disabled = true;
@@ -758,22 +855,28 @@
             let token;
             try {
                 token = await readApiToken();
-                currentStep = 'Generate password';
-                setStatus('Generating password through PWPush...');
-                const generated = await pwpushPost('/api/v2/generate', {
-                    type: 'password', length, count: 1,
-                    charset: 'ascii',
-                    uppercase: rules.uppercase,
-                    lowercase: rules.lowercase,
-                    digits: rules.digits,
-                    symbols: rules.symbols,
-                    min_digits: rules.digits ? 1 : 0,
-                    min_symbols: rules.symbols ? 1 : 0,
-                    avoid_ambiguous: rules.avoidAmbiguous
-                }, token);
-                const password = generated?.results?.[0];
-                currentStep = 'Validate generated password';
-                validateGeneratedPassword(password, length, rules);
+                let password;
+                if (useExistingPassword) {
+                    currentStep = 'Validate existing password';
+                    password = validateExistingPassword(existingPassword);
+                } else {
+                    currentStep = 'Generate password';
+                    setStatus('Generating password through PWPush...');
+                    const generated = await pwpushPost('/api/v2/generate', {
+                        type: 'password', length, count: 1,
+                        charset: 'ascii',
+                        uppercase: rules.uppercase,
+                        lowercase: rules.lowercase,
+                        digits: rules.digits,
+                        symbols: rules.symbols,
+                        min_digits: rules.digits ? 1 : 0,
+                        min_symbols: rules.symbols ? 1 : 0,
+                        avoid_ambiguous: rules.avoidAmbiguous
+                    }, token);
+                    password = generated?.results?.[0];
+                    currentStep = 'Validate generated password';
+                    validateGeneratedPassword(password, length, rules);
+                }
                 currentStep = 'Create secure sharing link';
                 setStatus('Creating 7-day/3-view secure link (or your selected expiration)...');
                 const pushed = await pwpushPost('/api/v2/pushes', {
@@ -795,6 +898,11 @@
                 }
                 const link = getSafeShareUrl(pushed.html_url);
                 state.password = password;
+                if (useExistingPassword) {
+                    // Keep only the result's masked copy; erase the entry field.
+                    $('#tns-pw-existing-password').value = '';
+                    existingPassword = '';
+                }
                 state.link = link;
                 state.days = days;
                 state.views = views;
@@ -820,6 +928,7 @@
                 generate.disabled = false;
             } finally {
                 token = null;
+                existingPassword = '';
                 state.busy = false;
             }
         });
