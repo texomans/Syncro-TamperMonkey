@@ -694,7 +694,7 @@
                     <button type="button" data-action="copy-diagnostics">Copy Diagnostics</button>
                     <p class="tns-pw-muted">Only safe metadata is included: never an API key, password, unlock passphrase, or secret link.</p>
                 </details>
-                <section class="tns-pw-result" aria-label="Generated result">
+                <section class="tns-pw-result" aria-label="Secure sharing result">
                     <div class="tns-pw-field"><label for="tns-pw-password">Shared password</label><input id="tns-pw-password" type="password" readonly autocomplete="off"></div>
                     <div class="tns-pw-actions"><button type="button" data-action="toggle">Show / Hide Password</button><button type="button" data-action="copy-password">Copy Password</button></div>
                     <div class="tns-pw-field" style="margin-top:12px;"><label for="tns-pw-url">Secure sharing link</label><input id="tns-pw-url" type="text" readonly></div>
