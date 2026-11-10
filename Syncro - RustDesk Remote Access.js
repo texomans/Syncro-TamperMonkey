@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - RustDesk Remote Access
 // @namespace    https://texomans.com/
-// @version      2.0.3
+// @version      2.0.4
 // @description  RustDesk controls for asset details, Assets & RMM, tickets, chat, Customers asset tables, and RMM Alerts.
 // @match        https://*.syncromsp.com/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20RustDesk%20Remote%20Access.js
@@ -30,28 +30,14 @@
     1000;
 
   function normalizeUrl(value) {
-    const trimmed =
-      (value || '').trim();
-
-    if (!trimmed) {
-      return '';
-    }
-
+    // Only an actual absolute link in RustDesk Link enables remote controls.
+    // Placeholder text and edit anchors must never resolve against the Syncro URL.
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!/^(?:https?|rustdesk):\/\//i.test(trimmed)) return '';
     try {
-      const url =
-        new URL(
-          trimmed,
-          window.location.origin
-        );
-
-      if (
-        url.protocol !== 'http:' &&
-        url.protocol !== 'https:'
-      ) {
-        return '';
-      }
-
-      return url.href;
+      const url = new URL(trimmed);
+      return ['http:', 'https:', 'rustdesk:'].includes(url.protocol) && url.hostname ? url.href : '';
     } catch {
       return '';
     }
@@ -138,16 +124,10 @@
       return '';
     }
 
-    const anchor =
-      fieldCell.querySelector(
-        'a[href]'
-      );
-
-    if (anchor?.href) {
-      return normalizeUrl(
-        anchor.href
-      );
-    }
+    for (const anchor of fieldCell.querySelectorAll('a[href]')) {
+        const fieldUrl = normalizeUrl(anchor.getAttribute('href'));
+        if (fieldUrl) return fieldUrl;
+      }
 
     return normalizeUrl(
       fieldCell.textContent
@@ -806,22 +786,15 @@
     );
   }
 
-  function normalizeUrl(
-    value,
-    base = window.location.origin
-  ) {
-    const trimmed =
-      (value || '').trim();
-
-    if (!trimmed) {
-      return '';
-    }
-
+  function normalizeUrl(value) {
+    // Only an actual absolute link in RustDesk Link enables remote controls.
+    // Placeholder text and edit anchors must never resolve against the Syncro URL.
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!/^(?:https?|rustdesk):\/\//i.test(trimmed)) return '';
     try {
-      return new URL(
-        trimmed,
-        base
-      ).href;
+      const url = new URL(trimmed);
+      return ['http:', 'https:', 'rustdesk:'].includes(url.protocol) && url.hostname ? url.href : '';
     } catch {
       return '';
     }
@@ -1101,6 +1074,8 @@
     dropdownGroup.className =
       'btn-group';
 
+    dropdownGroup.setAttribute('data-tns-rustdesk-assets-index-dropdown', 'true');
+
     dropdownGroup.innerHTML = `
       <a class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" href="#">
         &nbsp;<span class="caret"></span>
@@ -1173,6 +1148,7 @@
       );
 
     if (!rustDeskUrl) {
+      wrapper.querySelectorAll('[data-tns-rustdesk-assets-index-dropdown]').forEach(group => group.remove());
       return;
     }
 
@@ -1320,12 +1296,15 @@
 
   const rustDeskLinkCache = new Map();
 
-  function normalizeUrl(value, base = window.location.origin) {
-    const trimmed = (value || '').trim();
-    if (!trimmed) return '';
-
+  function normalizeUrl(value) {
+    // Only an actual absolute link in RustDesk Link enables remote controls.
+    // Placeholder text and edit anchors must never resolve against the Syncro URL.
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!/^(?:https?|rustdesk):\/\//i.test(trimmed)) return '';
     try {
-      return new URL(trimmed, base).href;
+      const url = new URL(trimmed);
+      return ['http:', 'https:', 'rustdesk:'].includes(url.protocol) && url.hostname ? url.href : '';
     } catch {
       return '';
     }
@@ -1424,10 +1403,9 @@
     );
 
     if (fieldCell) {
-      const anchor = fieldCell.querySelector('a[href]');
-
-      if (anchor?.href) {
-        return normalizeUrl(anchor.href);
+      for (const anchor of fieldCell.querySelectorAll('a[href]')) {
+        const fieldUrl = normalizeUrl(anchor.getAttribute('href'));
+        if (fieldUrl) return fieldUrl;
       }
 
       const textUrl = normalizeUrl(fieldCell.textContent);
@@ -1470,7 +1448,7 @@
   }
 
   async function fetchRustDeskLinkFromAsset(assetUrl) {
-    const normalizedAssetUrl = normalizeUrl(assetUrl);
+    const normalizedAssetUrl = new URL(assetUrl, window.location.origin).href;
 
     if (!normalizedAssetUrl) {
       return '';
@@ -1636,6 +1614,8 @@
     dropdownGroup.className =
       'btn-group';
 
+    dropdownGroup.setAttribute('data-tns-rustdesk-chat-dropdown', 'true');
+
     dropdownGroup.innerHTML = `
       <a class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" href="#">
         &nbsp;<span class="caret"></span>
@@ -1789,6 +1769,7 @@
       );
 
     if (!rustDeskUrl) {
+      remoteArea.querySelectorAll('[data-tns-rustdesk-chat-dropdown]').forEach(group => group.remove());
       return;
     }
 
@@ -1916,22 +1897,15 @@
   const assetLinkCache =
     new Map();
 
-  function normalizeUrl(
-    value,
-    base = window.location.origin
-  ) {
-    const trimmed =
-      (value || '').trim();
-
-    if (!trimmed) {
-      return '';
-    }
-
+  function normalizeUrl(value) {
+    // Only an actual absolute link in RustDesk Link enables remote controls.
+    // Placeholder text and edit anchors must never resolve against the Syncro URL.
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!/^(?:https?|rustdesk):\/\//i.test(trimmed)) return '';
     try {
-      return new URL(
-        trimmed,
-        base
-      ).href;
+      const url = new URL(trimmed);
+      return ['http:', 'https:', 'rustdesk:'].includes(url.protocol) && url.hostname ? url.href : '';
     } catch {
       return '';
     }
@@ -2117,15 +2091,9 @@
       );
 
     if (fieldCell) {
-      const anchor =
-        fieldCell.querySelector(
-          'a[href]'
-        );
-
-      if (anchor?.href) {
-        return normalizeUrl(
-          anchor.href
-        );
+      for (const anchor of fieldCell.querySelectorAll('a[href]')) {
+        const fieldUrl = normalizeUrl(anchor.getAttribute('href'));
+        if (fieldUrl) return fieldUrl;
       }
 
       const textUrl =
@@ -2206,9 +2174,7 @@
     assetUrl
   ) {
     const normalizedAssetUrl =
-      normalizeUrl(
-        assetUrl
-      );
+      new URL(assetUrl, window.location.origin).href;
 
     if (!normalizedAssetUrl) {
       return '';
@@ -2393,6 +2359,8 @@
     dropdownGroup.className =
       'btn-group';
 
+    dropdownGroup.setAttribute('data-tns-rustdesk-ticket-dropdown', 'true');
+
     dropdownGroup.innerHTML = `
       <a class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" href="#">
         &nbsp;<span class="caret"></span>
@@ -2448,6 +2416,7 @@
     );
 
     if (!rustDeskUrl) {
+      remoteCell.querySelectorAll('[data-tns-rustdesk-ticket-dropdown]').forEach(group => group.remove());
       return;
     }
 
@@ -2649,22 +2618,15 @@
   'use strict';
   const assetLinkCache = new Map();
   const RUSTDESK_LAUNCH_TAB_CLOSE_DELAY = 1000;
-  function normalizeUrl(
-    value,
-    base = window.location.origin
-  ) {
-    const trimmed =
-      (value || '').trim();
-
-    if (!trimmed) {
-      return '';
-    }
-
+  function normalizeUrl(value) {
+    // Only an actual absolute link in RustDesk Link enables remote controls.
+    // Placeholder text and edit anchors must never resolve against the Syncro URL.
+    if (typeof value !== 'string') return '';
+    const trimmed = value.trim();
+    if (!/^(?:https?|rustdesk):\/\//i.test(trimmed)) return '';
     try {
-      return new URL(
-        trimmed,
-        base
-      ).href;
+      const url = new URL(trimmed);
+      return ['http:', 'https:', 'rustdesk:'].includes(url.protocol) && url.hostname ? url.href : '';
     } catch {
       return '';
     }
@@ -2828,15 +2790,9 @@
       );
 
     if (fieldCell) {
-      const anchor =
-        fieldCell.querySelector(
-          'a[href]'
-        );
-
-      if (anchor?.href) {
-        return normalizeUrl(
-          anchor.href
-        );
+      for (const anchor of fieldCell.querySelectorAll('a[href]')) {
+        const fieldUrl = normalizeUrl(anchor.getAttribute('href'));
+        if (fieldUrl) return fieldUrl;
       }
 
       const textUrl =
@@ -2917,9 +2873,7 @@
     assetUrl
   ) {
     const normalizedAssetUrl =
-      normalizeUrl(
-        assetUrl
-      );
+      new URL(assetUrl, window.location.origin).href;
 
     if (!normalizedAssetUrl) {
       return '';
@@ -3140,4 +3094,5 @@
     document.addEventListener('turbo:load', schedule);
     new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
   })();
+
 
