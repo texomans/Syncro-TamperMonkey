@@ -1,11 +1,11 @@
 // ==UserScript==
-// @name         Syncro Assets - Copy Passwords
+// @name         Syncro - Copy Asset Fields
 // @namespace    https://texomans.com/
 // @version      1.0.0
 // @description  Copies Administrator Password or Tech Gurus Password from the current Syncro asset.
 // @match        https://*.syncromsp.com/customer_assets/*
-// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Copy%20Passwords.user.js
-// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Copy%20Passwords.user.js
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20Copy%20Asset%20Fields.user.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20Copy%20Asset%20Fields.user.js
 // @run-at       document-idle
 // @noframes
 // @grant        GM_setClipboard
