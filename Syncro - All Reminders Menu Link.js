@@ -4,8 +4,8 @@
 // @version      1.0.0
 // @description  Add All Reminders beneath New Reminder in Syncro's user menu.
 // @match        https://*.syncromsp.com/*
-// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20All%20Reminders%20Menu%20Link.user.js
-// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20All%20Reminders%20Menu%20Link.user.js
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20All%20Reminders%20Menu%20Link.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20All%20Reminders%20Menu%20Link.js
 // @run-at       document-end
 // @grant        none
 // ==/UserScript==
