@@ -5,8 +5,8 @@
 // @description  Darkens incoming HTML content in Syncro Tickets and Leads.
 // @match        https://*.syncromsp.com/tickets/*
 // @match        https://*.syncromsp.com/leads/*
-// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20HTML%20Content%20Dark%20Mode.user.js
-// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20HTML%20Content%20Dark%20Mode.user.js
+// @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20HTML%20Content%20Dark%20Mode.js
+// @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20-%20HTML%20Content%20Dark%20Mode.js
 // @run-at       document-end
 // @grant        none
 // ==/UserScript==
