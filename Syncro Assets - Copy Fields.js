@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Syncro - Copy Asset Fields
 // @namespace    https://texomans.com/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Copies Administrator Password or Tech Gurus Password from the current Syncro asset.
 // @match        https://*.syncromsp.com/customer_assets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Assets%20-%20Copy%20Fields.js
@@ -14,7 +14,7 @@
 (function () {
   'use strict';
 
-  const assetPath = /^\/customer_assets\/\d+\/?$/;
+  const assetPath = /^\/customer_assets\/(\d+)\/?$/;
   const fields = ['Administrator Password', 'Tech Gurus Password'];
   const group = document.createElement('div');
   group.className = 'btn-group';
@@ -35,6 +35,7 @@
   const announcement = group.querySelector('[role="status"]');
   const notice = group.querySelector('[aria-hidden][hidden]');
   let noticeTimer;
+  let latestCopyRequest = 0;
 
   for (const field of fields) {
     const item = document.createElement('li');
@@ -54,18 +55,35 @@
       getComputedStyle(element).visibility === 'visible';
   }
 
-  function findFieldCell(field) {
-    const cells = document.querySelectorAll(`td[data-testid="${field}"]`);
+  function findFieldCell(field, assetDocument, isAvailable) {
+    const cells = assetDocument.querySelectorAll(`td[data-testid="${field}"]`);
     for (const cell of cells) {
-      if (isVisible(cell)) return cell;
+      if (isAvailable(cell)) return cell;
     }
 
-    for (const heading of document.querySelectorAll('th')) {
+    for (const heading of assetDocument.querySelectorAll('th')) {
       const label = heading.textContent.trim().replace(/:$/, '').trim();
       const cell = heading.nextElementSibling;
-      if (label === field && cell?.matches('td') && isVisible(cell)) return cell;
+      if (label === field && cell?.matches('td') && isAvailable(cell)) return cell;
     }
     return null;
+  }
+
+  async function findOverviewFieldCell(field, assetId) {
+    // The base asset URL opens Overview without the selected tab's query or hash.
+    const overviewUrl = new URL(`/customer_assets/${assetId}`, location.origin);
+    const response = await fetch(overviewUrl, { mode: 'same-origin', cache: 'no-store' });
+    const responseUrl = new URL(response.url);
+    if (!response.ok || responseUrl.origin !== overviewUrl.origin ||
+        responseUrl.pathname.match(assetPath)?.[1] !== assetId) {
+      throw new Error('Could not load asset Overview');
+    }
+
+    const overview = new DOMParser().parseFromString(await response.text(), 'text/html');
+    // Detached HTML has no layout, so check the markup instead of getClientRects().
+    return findFieldCell(field, overview, cell => !cell.closest(
+      '[hidden], .hidden, .sr-only, [aria-hidden="true"]'
+    ));
   }
 
   function getFieldValue(cell) {
@@ -101,24 +119,35 @@
   }
 
   async function copyField(field) {
-    if (!assetPath.test(location.pathname)) return;
+    const assetId = location.pathname.match(assetPath)?.[1];
+    if (!assetId) return;
 
-    const cell = findFieldCell(field);
-    const value = cell ? getFieldValue(cell) : '';
-    if (!value) {
-      showStatus('Nothing found to copy');
-      return;
-    }
+    const request = ++latestCopyRequest;
+    const isCurrent = () => request === latestCopyRequest &&
+      location.pathname.match(assetPath)?.[1] === assetId;
 
     try {
+      let cell = findFieldCell(field, document, isVisible);
+      if (!cell) {
+        showStatus('Loading asset fields…');
+        cell = await findOverviewFieldCell(field, assetId);
+      }
+      if (!isCurrent()) return;
+
+      const value = cell ? getFieldValue(cell) : '';
+      if (!value) {
+        showStatus('Nothing found to copy');
+        return;
+      }
+
       if (typeof GM_setClipboard === 'function') {
         GM_setClipboard(value, 'text');
       } else {
         await navigator.clipboard.writeText(value);
       }
-      showStatus(`Copied ${field}`);
+      if (isCurrent()) showStatus(`Copied ${field}`);
     } catch {
-      showStatus('Copy failed');
+      if (isCurrent()) showStatus('Copy failed');
     }
   }
 
