@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         Syncro Tickets - Copy Toolbar and Sticky Header
 // @namespace    https://texomans.com/
-// @version      1.1.3
-// @description  Syncro-styled ticket copy tools plus a collapsible, responsive fixed ticket header that respects notifications, Guided Resolution, and disables sticky mode on mobile.
+// @version      1.2.0
+// @description  Syncro-styled ticket copy tools and collapsible desktop headers for ticket and asset details that respect notifications and Guided Resolution.
 // @match        https://*.syncromsp.com/tickets/*
+// @match        https://*.syncromsp.com/customer_assets/*
 // @updateURL    https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
 // @downloadURL  https://raw.githubusercontent.com/texomans/Syncro-TamperMonkey/main/Syncro%20Tickets%20-%20Copy%20Toolbar%20and%20Sticky%20Header.js
 // @run-at       document-idle
@@ -18,6 +19,11 @@
   const STYLE_ID = 'tns-ticket-copy-sticky-style';
   const SPACER_ID = 'tns-ticket-sticky-header-spacer';
   const TOGGLE_ID = 'tns-ticket-sticky-toggle';
+  const ASSET_DETAIL_PATH = /^\/customer_assets\/\d+\/?$/;
+  const IS_ASSET_PAGE = ASSET_DETAIL_PATH.test(location.pathname);
+  const TITLE_ROW_CLASS = IS_ASSET_PAGE
+    ? 'tns-sticky-asset-row'
+    : 'tns-sticky-title-row';
 
   /*
    * Syncro inserts overdue reminders and other page-level
@@ -1294,7 +1300,7 @@
     );
   }
 
-  function getStickyHeaderRows() {
+  function getStickyTicketHeaderRows() {
     const backRow =
       document.querySelector(
         '.back-button-container'
@@ -1369,6 +1375,24 @@
       mainPane,
       mainInner,
       widthAnchor,
+      geometry: null
+    };
+  }
+
+  function getStickyAssetHeaderRows() {
+    // Syncro puts the name, status, and action bar in the same row.
+    const titleRow = document
+      .querySelector('h1 [data-testid="asset-name"]')
+      ?.closest('.row');
+    if (!titleRow) {
+      return null;
+    }
+
+    const container = titleRow.parentElement;
+    return {
+      titleRow,
+      container,
+      widthAnchor: container,
       geometry: null
     };
   }
@@ -1874,33 +1898,12 @@
       !stickyCollapsed
     );
 
-    if (stickyCollapsed) {
-      toggle.setAttribute(
-        'aria-expanded',
-        'false'
-      );
-
-      toggle.setAttribute(
-        'aria-label',
-        'Expand sticky ticket header'
-      );
-
-      toggle.title =
-        'Expand sticky ticket header';
-    } else {
-      toggle.setAttribute(
-        'aria-expanded',
-        'true'
-      );
-
-      toggle.setAttribute(
-        'aria-label',
-        'Collapse sticky ticket header'
-      );
-
-      toggle.title =
-        'Collapse sticky ticket header';
-    }
+    const action = stickyCollapsed ? 'Expand' : 'Collapse';
+    const page = IS_ASSET_PAGE ? 'asset' : 'ticket';
+    const label = `${action} sticky ${page} header`;
+    toggle.setAttribute('aria-expanded', String(!stickyCollapsed));
+    toggle.setAttribute('aria-label', label);
+    toggle.title = label;
   }
 
   function ensureCollapseToggle(
@@ -2087,7 +2090,7 @@
     );
 
     parts.backRow
-      .classList.remove(
+      ?.classList.remove(
         'tns-sticky-row',
         'tns-sticky-back-row'
       );
@@ -2095,7 +2098,7 @@
     parts.titleRow
       .classList.remove(
         'tns-sticky-row',
-        'tns-sticky-title-row'
+        TITLE_ROW_CLASS
       );
 
     if (
@@ -2178,7 +2181,7 @@
     );
 
     parts.backRow
-      .classList.add(
+      ?.classList.add(
         'tns-sticky-row',
         'tns-sticky-back-row'
       );
@@ -2186,7 +2189,7 @@
     parts.titleRow
       .classList.add(
         'tns-sticky-row',
-        'tns-sticky-title-row'
+        TITLE_ROW_CLASS
       );
 
     if (
@@ -2266,6 +2269,18 @@
   function applyStickyLayout() {
     const parts =
       stickyRowsCache;
+
+    if (IS_ASSET_PAGE) {
+      if (!ASSET_DETAIL_PATH.test(location.pathname)) {
+        if (stickyEnabled) disableStickyHeader(parts);
+        return;
+      }
+
+      if (!parts?.titleRow.isConnected) {
+        ensureStickyHeaderRows();
+        return;
+      }
+    }
 
     if (!parts) {
       return;
@@ -2469,42 +2484,36 @@
   // Sticky setup
   // ============================================================
 
-  function ensureStickyTicketHeaderRows() {
+  function ensureStickyHeaderRows() {
     /*
      * Already initialized.
      */
     if (
-      stickyRowsCache &&
-      document.contains(
-        stickyRowsCache.backRow
-      )
+      stickyRowsCache?.titleRow.isConnected &&
+      (IS_ASSET_PAGE || stickyRowsCache.backRow.isConnected)
     ) {
       scheduleStickyLayout();
       return true;
     }
 
+    if (stickyEnabled) disableStickyHeader(stickyRowsCache);
     stickyRowsCache = null;
-    stickyEnabled = false;
 
-    const parts =
-      getStickyHeaderRows();
+    const parts = IS_ASSET_PAGE
+      ? getStickyAssetHeaderRows()
+      : getStickyTicketHeaderRows();
 
     if (
-      !parts ||
-      !parts.backRow ||
-      !parts.titleRow ||
+      !parts?.titleRow ||
       !parts.container ||
-      !parts.mainPane ||
-      !parts.widthAnchor
+      !parts.widthAnchor ||
+      (!IS_ASSET_PAGE && (!parts.backRow || !parts.mainPane))
     ) {
       return false;
     }
 
     stickyRowsCache = parts;
 
-    /*
-     * Create spacer once.
-     */
     let spacer =
       getSpacer();
 
@@ -2516,30 +2525,11 @@
 
       spacer.id =
         SPACER_ID;
-
-      const afterNode =
-        parts.subjectRow ||
-        parts.titleRow;
-
-      if (
-        afterNode?.parentNode
-      ) {
-        if (
-          afterNode.nextSibling
-        ) {
-          afterNode.parentNode
-            .insertBefore(
-              spacer,
-              afterNode.nextSibling
-            );
-        } else {
-          afterNode.parentNode
-            .appendChild(
-              spacer
-            );
-        }
-      }
     }
+
+    // Reattach the spacer if Syncro replaced the header.
+    const lastRow = parts.subjectRow || parts.titleRow;
+    lastRow.after(spacer);
 
     spacer.style.display =
       'none';
@@ -2558,6 +2548,9 @@
       );
 
     if (toggle) {
+      if (toggle.nextElementSibling !== spacer) {
+        spacer.before(toggle);
+      }
       toggle.style.display =
         'none';
     }
@@ -2718,7 +2711,7 @@
       }
 
       /* ========================================================
-       * Fixed ticket header
+       * Fixed ticket and asset headers
        * ======================================================== */
 
       .tns-sticky-row {
@@ -2790,11 +2783,8 @@
           11 !important;
       }
 
-      /*
-       * Use available width efficiently when
-       * Guided Resolution is open.
-       */
-      .tns-sticky-title-row {
+      .tns-sticky-title-row,
+      .tns-sticky-asset-row {
         z-index:
           12 !important;
 
@@ -2826,11 +2816,24 @@
           110px;
       }
 
+      .tns-sticky-asset-row > .col-md-5 {
+        float: none !important;
+        width: auto !important;
+        min-width: 0;
+        max-width: 50%;
+        overflow-wrap: anywhere;
+      }
+
+      .tns-sticky-asset-row > .btn-bar {
+        margin-top: 0 !important;
+      }
+
       /*
        * Action bar gets all remaining space.
        */
       .tns-sticky-title-row > .title-btns,
-      .tns-sticky-title-row > .btn-bar {
+      .tns-sticky-title-row > .btn-bar,
+      .tns-sticky-asset-row > .btn-bar {
         float:
           none !important;
 
@@ -2863,7 +2866,8 @@
       }
 
       .tns-sticky-title-row > .title-btns > *,
-      .tns-sticky-title-row > .btn-bar > * {
+      .tns-sticky-title-row > .btn-bar > *,
+      .tns-sticky-asset-row > .btn-bar > * {
         float:
           none !important;
 
@@ -2877,7 +2881,9 @@
       }
 
       .tns-sticky-title-row .dropdown-menu,
-      .tns-sticky-title-row .open > .dropdown-menu {
+      .tns-sticky-title-row .open > .dropdown-menu,
+      .tns-sticky-asset-row .dropdown-menu,
+      .tns-sticky-asset-row .open > .dropdown-menu {
         z-index:
           15 !important;
       }
@@ -2925,21 +2931,20 @@
   // ============================================================
 
   function initialize() {
-    if (
-      !/\/tickets\/\d+/i.test(
-        location.pathname
-      )
-    ) {
+    const isDetailPage = IS_ASSET_PAGE
+      ? ASSET_DETAIL_PATH.test(location.pathname)
+      : getTicketIdFromPath();
+    if (!isDetailPage) {
       return false;
     }
 
     injectStyles();
 
     const toolbarReady =
-      ensureToolbar();
+      IS_ASSET_PAGE || ensureToolbar();
 
     const stickyReady =
-      ensureStickyTicketHeaderRows();
+      ensureStickyHeaderRows();
 
     return (
       toolbarReady &&
@@ -2947,37 +2952,27 @@
     );
   }
 
-  /*
-   * Close Copy dropdown when clicking elsewhere.
-   */
-  document.addEventListener(
-    'click',
-    event => {
-      if (
-        !event.target.closest(
-          '#' +
-          TOOLBAR_ID +
-          ' .tns-ticket-copy-more'
-        )
-      ) {
+  if (!IS_ASSET_PAGE && !getTicketIdFromPath()) {
+    return;
+  }
+
+  if (!IS_ASSET_PAGE) {
+    // Close the ticket Copy dropdown when clicking elsewhere or pressing Escape.
+    document.addEventListener('click', event => {
+      if (!event.target.closest('#' + TOOLBAR_ID + ' .tns-ticket-copy-more')) {
         closeCopyMenus();
       }
-    }
-  );
+    });
 
-  document.addEventListener(
-    'keydown',
-    event => {
-      if (
-        event.key === 'Escape'
-      ) {
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape') {
         closeCopyMenus();
       }
-    }
-  );
+    });
+  }
 
   /*
-   * Syncro mounts some ticket components
+   * Syncro mounts some components
    * asynchronously.
    */
   let attempts = 0;
